@@ -64,7 +64,7 @@ echo "============================== Setting Up The Code =======================
 
 echo "[*] Git Clone the Repo ..."
 git clone https://github.com/Shantanumtk/AWS-CloudShelf-CPSC-465.git
-cd spring-microservices-bookstore-demo
+cd AWS-CloudShelf-CPSC-465/spring-microservices-bookstore-demo
 
 echo "[*] Maven Build Package ..."
 mvn clean package -DskipTests | tee maven.log
