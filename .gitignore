@@ -109,4 +109,7 @@ gradle-app.properties
 **/*.tfstate.*
 .terragrunt-cache/
 # Keep the dependency lock file for reproducible 'terraform init'
-!**/.terraform.lock.hcl
+**/.terraform.lock.hcl
++**/.terraform.lock.hcl
++**/*.tfplan
++**/tfplan
