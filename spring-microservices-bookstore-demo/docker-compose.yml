@@ -1,4 +1,6 @@
-#Docker Compose YAML File 
+# docker-compose.yml
+# Option B: No Edge. Frontend published directly on :3000 → calls API Gateway :8080.
+# Requires a .env with FRONTEND_PORT, EC2_PUBLIC_IP, GATEWAY_PORT.
 
 services:
   ## Mongo
@@ -10,13 +12,12 @@ services:
       - "27017:27017"
     volumes:
       - ./databases/mongo-data:/data/db
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Postgres (Order)
   postgres-order:
     container_name: postgres-order
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_DB: order_service
       POSTGRES_USER: admin
@@ -28,13 +29,12 @@ services:
       - "5431:5431"
     command: -p 5431
     restart: always
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Postgres (Stock Check)
   postgres-stock-check:
     container_name: postgres-stock-check
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_DB: stock_check_service
       POSTGRES_USER: admin
@@ -45,13 +45,12 @@ services:
     ports:
       - "5432:5432"
     restart: always
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Postgres (Author)
   postgres-author:
     container_name: postgres-author
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_DB: author_service
       POSTGRES_USER: admin
@@ -63,8 +62,7 @@ services:
       - "5433:5433"
     command: -p 5433
     restart: always
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## ZooKeeper
   zookeeper:
@@ -75,8 +73,7 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Kafka Broker
   broker:
@@ -94,8 +91,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Zipkin
   zipkin:
@@ -103,8 +99,7 @@ services:
     container_name: zipkin
     ports:
       - "9411:9411"
-    profiles:
-      - infrastructure
+    profiles: [infrastructure]
 
   ## Eureka Server
   discovery-server:
@@ -113,9 +108,10 @@ services:
     ports:
       - "8761:8761"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-    profiles:
-      - discovery-config
+      SPRING_PROFILES_ACTIVE: docker
+      # Workaround for Java 17 + cgroups v2 NPE in ProcessorMetrics on some hosts
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
+    profiles: [discovery-config]
 
   ## Config Server
   config-server:
@@ -124,81 +120,85 @@ services:
     ports:
       - "8888:8888"
     environment:
-      - SPRING_PROFILES_ACTIVE=native
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
+      SPRING_PROFILES_ACTIVE: native
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka
     depends_on:
       - discovery-server
-    profiles:
-      - discovery-config
+    profiles: [discovery-config]
 
   ## API Gateway
   api-gateway:
     image: microservices-bookstore/api-gateway:latest
     container_name: api-gateway
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
-       # Use .env vars; Compose substitutes these before starting
-      - CORS_ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://${EC2_PUBLIC_IP}:${FRONTEND_PORT}"
-    profiles:
-      - services
+      SPRING_PROFILES_ACTIVE: docker
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: TRACE
+      # CORS: allow the browser origin hitting the frontend (localhost and EC2 public IP on FRONTEND_PORT)
+      CORS_ALLOWED_ORIGINS: "http://localhost:${FRONTEND_PORT:-3000},http://${EC2_PUBLIC_IP}:${FRONTEND_PORT:-3000}"
+      # If your gateway pulls config from config-server, leave it as app defaults.
+      # To hard-disable config-server, uncomment next line:
+      # SPRING_CLOUD_CONFIG_ENABLED: "false"
+    depends_on:
+      - config-server
+      - discovery-server
+    profiles: [services]
 
   ## Book Service
   book-service:
     container_name: book-service
     image: microservices-bookstore/book-service:latest
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - mongo
+    profiles: [services]
 
   ## Author Service
   author-service:
     container_name: author-service
     image: microservices-bookstore/author-service:latest
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-author
+    profiles: [services]
 
   ## Order Service
   order-service:
     container_name: order-service
     image: microservices-bookstore/order-service:latest
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-order
+    profiles: [services]
 
-  ## Stock Check Service
+  ## Stock Check Service (Kotlin by default; replace with your FastAPI image if you switch)
   stock-check-service:
     container_name: stock-check-service
     image: microservices-bookstore/stock-check-service:latest
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-stock-check
+    profiles: [services]
 
   ## Message Service
   message-service:
     container_name: message-service
     image: microservices-bookstore/message-service:latest
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - broker
+    profiles: [services]
 
   ## Prometheus
   prometheus:
@@ -214,8 +214,7 @@ services:
       - stock-check-service
       - order-service
       - message-service
-    profiles:
-      - services
+    profiles: [services]
 
   ## Grafana
   grafana:
@@ -231,31 +230,20 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: password
-    profiles:
-      - services
+    profiles: [services]
 
-  ## NextJS Frontend (internal only; exposed via edge)
+  ## NextJS Frontend (public)
   nextjs-frontend:
     container_name: nextjs-frontend
     image: microservices-bookstore/nextjs-frontend:latest
-    depends_on:
-      - api-gateway
-    profiles:
-      - services
-
-  ## Edge reverse proxy (public entrypoint: :3000)
-  edge:
-    image: nginx:alpine
-    container_name: edge
-    depends_on:
-      - nextjs-frontend
-      - api-gateway
     ports:
-      - "3000:80"
-    volumes:
-      - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
-    profiles:
-      - services
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      # If your frontend uses an env to call the API; adjust to what your Next.js expects
+      NEXT_PUBLIC_API_BASE: "http://${EC2_PUBLIC_IP}:${GATEWAY_PORT:-8080}"
+    depends_on:
+      - api-gateway
+    profiles: [services]
 
 volumes:
   grafana_data:
