@@ -66,7 +66,7 @@ variable "ssh_private_key_path" {
 variable "local_script_path" {
   description = "Path to the local script you want to run on the instance"
   type        = string
-  default     = "/Users/shantanu/AWS-CloudShelf-CPSC-465/install_resources.sh"
+  default     = "/Users/shantanu/AWS-CloudShelf-Microservices-CPSC-465/install_resources.sh"
 }
 
 
