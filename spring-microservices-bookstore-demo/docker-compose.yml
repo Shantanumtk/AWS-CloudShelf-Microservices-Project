@@ -8,8 +8,7 @@ services:
       - "27017:27017"
     volumes:
       - ./databases/mongo-data:/data/db
-    profiles: [infrastructure]
-
+    
   ## Postgres (Order)
   postgres-order:
     container_name: postgres-order
@@ -25,7 +24,7 @@ services:
     ports:
       - "5431:5431"
     restart: always
-    profiles: [infrastructure]
+
 
   ## Postgres (Stock Check)
   postgres-stock-check:
@@ -42,7 +41,6 @@ services:
     ports:
       - "5432:5432"
     restart: always
-    profiles: [infrastructure]
 
   ## Postgres (Author)
   postgres-author:
@@ -59,7 +57,6 @@ services:
     ports:
       - "5433:5433"
     restart: always
-    profiles: [infrastructure]
 
   ## ZooKeeper
   zookeeper:
@@ -70,7 +67,6 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    profiles: [infrastructure]
 
   ## Kafka Broker
   broker:
@@ -88,7 +84,6 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    profiles: [infrastructure]
 
   ## Zipkin (Tracing)
   zipkin:
@@ -96,7 +91,6 @@ services:
     container_name: zipkin
     ports:
       - "9411:9411"
-    profiles: [infrastructure]
 
   ## Eureka Server
   discovery-server:
@@ -108,7 +102,6 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       # Micrometer cgroups workaround (safe)
       SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
-    profiles: [discovery-config]
 
   ## Config Server
   config-server:
@@ -118,11 +111,12 @@ services:
       - "8888:8888"
     environment:
       SPRING_PROFILES_ACTIVE: native
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka
       SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
+      EUREKA_CLIENT_ENABLED: "false"
+      SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: "-XX:-UseContainerSupport"
     depends_on:
       - discovery-server
-    profiles: [discovery-config]
 
   ## API Gateway
   api-gateway:
@@ -139,7 +133,6 @@ services:
     depends_on:
       - config-server
       - discovery-server
-    profiles: [services]
 
   ## Book Service (Mongo)
   book-service:
@@ -152,7 +145,6 @@ services:
     depends_on:
       - api-gateway
       - mongo
-    profiles: [services]
 
   ## Author Service (Postgres R2DBC)
   author-service:
@@ -170,7 +162,6 @@ services:
     depends_on:
       - api-gateway
       - postgres-author
-    profiles: [services]
 
   ## Order Service (Postgres — enable R2DBC here only if it fails)
   order-service:
@@ -189,7 +180,6 @@ services:
     depends_on:
       - api-gateway
       - postgres-order
-    profiles: [services]
 
   ## Stock Check Service (Postgres — enable R2DBC here only if it fails)
   stock-check-service:
@@ -208,7 +198,6 @@ services:
     depends_on:
       - api-gateway
       - postgres-stock-check
-    profiles: [services]
 
   ## Message Service
   message-service:
@@ -221,7 +210,6 @@ services:
       - api-gateway
       - broker
       - zookeeper
-    profiles: [services]
 
   ## Prometheus
   prometheus:
@@ -237,7 +225,6 @@ services:
       - stock-check-service
       - order-service
       - message-service
-    profiles: [services]
 
   ## Grafana
   grafana:
@@ -253,7 +240,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: password
-    profiles: [services]
 
   ## NextJS Frontend (directly exposed on :3000)
   nextjs-frontend:
@@ -263,7 +249,6 @@ services:
       - "3000:3000"
     depends_on:
       - api-gateway
-    profiles: [services]
 
 volumes:
   grafana_data:
