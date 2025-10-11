@@ -1,7 +1,3 @@
-# docker-compose.yml
-# Option B: No Edge. Frontend published directly on :3000 → calls API Gateway :8080.
-# Requires a .env with FRONTEND_PORT, EC2_PUBLIC_IP, GATEWAY_PORT.
-
 services:
   ## Mongo
   mongo:
@@ -25,9 +21,9 @@ services:
       PGDATA: /data/postgres
     volumes:
       - ./databases/postgres-order:/data/postgres
+    command: -p 5431
     ports:
       - "5431:5431"
-    command: -p 5431
     restart: always
     profiles: [infrastructure]
 
@@ -42,6 +38,7 @@ services:
       PGDATA: /data/postgres
     volumes:
       - ./databases/postgres-stock-check:/data/postgres
+    command: -p 5432
     ports:
       - "5432:5432"
     restart: always
@@ -58,9 +55,9 @@ services:
       PGDATA: /data/postgres
     volumes:
       - ./databases/postgres-author:/data/postgres
+    command: -p 5433
     ports:
       - "5433:5433"
-    command: -p 5433
     restart: always
     profiles: [infrastructure]
 
@@ -85,7 +82,7 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -93,7 +90,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     profiles: [infrastructure]
 
-  ## Zipkin
+  ## Zipkin (Tracing)
   zipkin:
     image: openzipkin/zipkin
     container_name: zipkin
@@ -109,7 +106,7 @@ services:
       - "8761:8761"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      # Workaround for Java 17 + cgroups v2 NPE in ProcessorMetrics on some hosts
+      # Micrometer cgroups workaround (safe)
       SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     profiles: [discovery-config]
 
@@ -122,6 +119,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: native
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - discovery-server
     profiles: [discovery-config]
@@ -131,59 +129,82 @@ services:
     image: microservices-bookstore/api-gateway:latest
     container_name: api-gateway
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: TRACE
-      # CORS: allow the browser origin hitting the frontend (localhost and EC2 public IP on FRONTEND_PORT)
-      CORS_ALLOWED_ORIGINS: "http://localhost:${FRONTEND_PORT:-3000},http://${EC2_PUBLIC_IP}:${FRONTEND_PORT:-3000}"
-      # If your gateway pulls config from config-server, leave it as app defaults.
-      # To hard-disable config-server, uncomment next line:
-      # SPRING_CLOUD_CONFIG_ENABLED: "false"
+      # Read from .env (e.g., http://localhost:3000,http://<EC2_IP>:3000)
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - config-server
       - discovery-server
     profiles: [services]
 
-  ## Book Service
+  ## Book Service (Mongo)
   book-service:
-    container_name: book-service
     image: microservices-bookstore/book-service:latest
+    container_name: book-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/book_service
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - api-gateway
       - mongo
     profiles: [services]
 
-  ## Author Service
+  ## Author Service (Postgres R2DBC)
   author-service:
-    container_name: author-service
     image: microservices-bookstore/author-service:latest
+    container_name: author-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres-author:5433/author_service
+      SPRING_R2DBC_USERNAME: admin
+      SPRING_R2DBC_PASSWORD: password
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres-author:5433/author_service
+      SPRING_FLYWAY_USER: admin
+      SPRING_FLYWAY_PASSWORD: password
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - api-gateway
       - postgres-author
     profiles: [services]
 
-  ## Order Service
+  ## Order Service (Postgres — enable R2DBC here only if it fails)
   order-service:
-    container_name: order-service
     image: microservices-bookstore/order-service:latest
+    container_name: order-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      # If you see the same R2DBC error, uncomment these:
+      # SPRING_R2DBC_URL: r2dbc:postgresql://postgres-order:5431/order_service
+      # SPRING_R2DBC_USERNAME: admin
+      # SPRING_R2DBC_PASSWORD: password
+      # SPRING_FLYWAY_URL: jdbc:postgresql://postgres-order:5431/order_service
+      # SPRING_FLYWAY_USER: admin
+      # SPRING_FLYWAY_PASSWORD: password
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - api-gateway
       - postgres-order
     profiles: [services]
 
-  ## Stock Check Service (Kotlin by default; replace with your FastAPI image if you switch)
+  ## Stock Check Service (Postgres — enable R2DBC here only if it fails)
   stock-check-service:
-    container_name: stock-check-service
     image: microservices-bookstore/stock-check-service:latest
+    container_name: stock-check-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      # If you see the same R2DBC error, uncomment these:
+      # SPRING_R2DBC_URL: r2dbc:postgresql://postgres-stock-check:5432/stock_check_service
+      # SPRING_R2DBC_USERNAME: admin
+      # SPRING_R2DBC_PASSWORD: password
+      # SPRING_FLYWAY_URL: jdbc:postgresql://postgres-stock-check:5432/stock_check_service
+      # SPRING_FLYWAY_USER: admin
+      # SPRING_FLYWAY_PASSWORD: password
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - api-gateway
       - postgres-stock-check
@@ -191,13 +212,15 @@ services:
 
   ## Message Service
   message-service:
-    container_name: message-service
     image: microservices-bookstore/message-service:latest
+    container_name: message-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration"
     depends_on:
       - api-gateway
       - broker
+      - zookeeper
     profiles: [services]
 
   ## Prometheus
@@ -232,15 +255,12 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: password
     profiles: [services]
 
-  ## NextJS Frontend (public)
+  ## NextJS Frontend (directly exposed on :3000)
   nextjs-frontend:
     container_name: nextjs-frontend
     image: microservices-bookstore/nextjs-frontend:latest
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      # If your frontend uses an env to call the API; adjust to what your Next.js expects
-      NEXT_PUBLIC_API_BASE: "http://${EC2_PUBLIC_IP}:${GATEWAY_PORT:-8080}"
+      - "3000:3000"
     depends_on:
       - api-gateway
     profiles: [services]
