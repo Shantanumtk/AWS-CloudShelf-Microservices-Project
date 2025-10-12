@@ -88,7 +88,7 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -143,6 +143,7 @@ services:
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY= TRACE
     profiles:
       - services
+
 
   ## Book Service Docker Compose Config
   book-service:
@@ -225,16 +226,14 @@ services:
       - "3001:3000"
     links:
       - prometheus:prometheus
-    # Use a named volume to avoid host permission issues
     volumes:
       - grafana_data:/var/lib/grafana
-    # Run as Grafana's non-root user (UID 472) so the volume is writable
-    user: "472"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
     profiles:
       - services
+
 
   ## NextJS Frontend
   nextjs-frontend:
