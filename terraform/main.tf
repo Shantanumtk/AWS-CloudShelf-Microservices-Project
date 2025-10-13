@@ -98,6 +98,14 @@ resource "aws_security_group" "ec2_sg" {
     cidr_blocks = [var.allowed_web_cidr]
   }
 
+  ingress {
+    description = "Gateway Port "
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
