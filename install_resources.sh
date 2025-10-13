@@ -67,22 +67,7 @@ git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.g
 cd AWS-CloudShelf-Microservices-CPSC-465/spring-microservices-bookstore-demo
 
 echo "[*] Maven Build Package ..."
+sudo chown -R "$USER:$USER" .
 mvn clean package -DskipTests | tee maven.log
 
-
-echo "============================== Running The Containers =============================="
-
-echo "[*] Building Frontend Image ..."
-docker build -t microservices-bookstore/nextjs-frontend:latest ./frontend
-echo "[*] Running Infra Profile Containers"
-docker compose --profile infrastructure up -d
-echo "[*] Running Discovery-Config Profile Containers"
-docker compose --profile discovery-config up -d
-echo "[*] Running Services Profile Containers"
-docker compose --profile services up -d
-
-echo "============================== Container Health Check =============================="
-echo "Checking Docker Compose Containers ..."
-docker compose ps 
-echo "============================== Container Health Check =============================="
 echo "✅ Done"
