@@ -25,7 +25,7 @@ interface OrderBook {
   inStock: boolean;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE!;
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080').replace(/\/$/, '');
 const HOST_FALLBACK = typeof window !== 'undefined'
   ? window.location.hostname
   : new URL(API_BASE_URL).hostname;
