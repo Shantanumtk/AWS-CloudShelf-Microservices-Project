@@ -10,6 +10,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
+# Copy .env for Next.js app 
+COPY .env .env
+
 # Copy the rest of the application code to the working directory
 COPY . .
 
