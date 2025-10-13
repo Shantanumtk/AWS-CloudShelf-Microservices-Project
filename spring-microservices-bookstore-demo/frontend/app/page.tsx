@@ -26,6 +26,8 @@ interface OrderBook {
 }
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080').replace(/\/$/, '');
+const AUTHORS_ENDPOINT = process.env.NEXT_PUBLIC_AUTHORS_ENDPOINT || `${API_BASE_URL}/api/authors`;
+
 const HOST_FALLBACK = typeof window !== 'undefined'
   ? window.location.hostname
   : new URL(API_BASE_URL).hostname;
@@ -139,7 +141,7 @@ const Home = () => {
 
   const fetchAuthors = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/authors`);
+      const response = await axios.get(AUTHORS_ENDPOINT);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
       setAuthors(response.data);
     } catch (error) {
       console.error('Error fetching authors:', error);
@@ -153,7 +155,7 @@ const Home = () => {
     }
 
     try {
-      await axios.post(`${API_BASE_URL}/authors`, newAuthor);
+      await axios.post(AUTHORS_ENDPOINT, newAuthor);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
       await fetchAuthors();
       setNewAuthor({ id: '', name: '', birthDate: '' });
     } catch (error) {
@@ -163,7 +165,7 @@ const Home = () => {
 
   const deleteAuthor = async (id: string) => {
     try {
-      await axios.delete(`${API_BASE_URL}/authors/${id}`);
+      await axios.delete(`${AUTHORS_ENDPOINT}/${id}`);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
       await fetchAuthors();
     } catch (error) {
       console.error('Error deleting author:', error);
@@ -182,7 +184,7 @@ const Home = () => {
     };
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/order`, order, {
+      const response = await axios.post(`${API_BASE_URL}/api/order`, order, {  // ✅ FIXED: Added /api prefix
         headers: { 'Content-Type': 'application/json' }
       });
 
