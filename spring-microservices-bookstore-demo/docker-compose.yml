@@ -100,8 +100,6 @@ services:
     container_name: discovery-server
     ports:
       - "8761:8761"
-    depends_on:
-      - config-server
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
@@ -137,6 +135,11 @@ services:
       - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - SPRING_CLOUD_GATEWAY_GLOBALCORS_CORS_CONFIGURATIONS_[/**]_ALLOWEDORIGINS=http://${PUBLIC_HOST}:${FRONTEND_PORT},http://localhost:3000
+      - SPRING_CLOUD_GATEWAY_GLOBALCORS_CORS_CONFIGURATIONS_[/**]_ALLOWEDMETHODS=GET,POST,PUT,DELETE,OPTIONS
+      - SPRING_CLOUD_GATEWAY_GLOBALCORS_CORS_CONFIGURATIONS_[/**]_ALLOWEDHEADERS=*
+      - SPRING_CLOUD_GATEWAY_GLOBALCORS_CORS_CONFIGURATIONS_[/**]_ALLOWCREDENTIALS=true
+      - SPRING_CLOUD_GATEWAY_DEFAULT-FILTERS[0]=DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin RETAIN_UNIQUE      
     depends_on:
       - discovery-server
       - config-server
@@ -208,7 +211,7 @@ services:
       - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-stock-check:5432/stock_check_service
       - SPRING_FLYWAY_USER=admin
       - SPRING_FLYWAY_PASSWORD=password
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE="http://discovery-server:8761/eureka"
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
       - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
