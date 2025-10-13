@@ -11,9 +11,9 @@ spring:
         - id: book-service
           uri: lb://book-service
           predicates:
-            - Path=/api/graphql
+            - Path=/api/graphql/**
           filters:
-            - SetPath=/graphql
+            - RewritePath=/api/graphql(?<segment>/?.*), /graphql${segment}
 
         # Order REST endpoint
         - id: order-service

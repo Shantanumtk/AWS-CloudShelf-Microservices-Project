@@ -129,10 +129,12 @@ services:
       - "8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - SPRING_CLOUD_CONFIG_URI=http://config-server:8888
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
       - SPRING_CLOUD_GATEWAY_GLOBALCORS_CORS_CONFIGURATIONS_[/**]_ALLOWEDORIGINS=http://${PUBLIC_HOST}:${FRONTEND_PORT},http://localhost:3000
@@ -150,10 +152,11 @@ services:
     image: microservices-bookstore/book-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
       - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/book_service
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
     depends_on:
       - api-gateway
       - mongo
@@ -164,6 +167,7 @@ services:
     image: microservices-bookstore/author-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
       - SPRING_R2DBC_URL=r2dbc:postgresql://postgres-author:5433/author_service
       - SPRING_R2DBC_USERNAME=admin
       - SPRING_R2DBC_PASSWORD=password
@@ -172,7 +176,7 @@ services:
       - SPRING_FLYWAY_PASSWORD=password
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
     depends_on:
       - api-gateway
       - postgres-author
@@ -183,10 +187,11 @@ services:
     image: microservices-bookstore/order-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-order:5431/order_service
       - SPRING_DATASOURCE_USERNAME=admin
       - SPRING_DATASOURCE_PASSWORD=password
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-order:5431/order_service
       - SPRING_FLYWAY_USER=admin
       - SPRING_FLYWAY_PASSWORD=password
@@ -194,8 +199,7 @@ services:
       - STOCK_CHECK_BASE_URL=http://stock-check-service:8080 
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
     depends_on:
       - api-gateway
       - postgres-order
@@ -206,17 +210,17 @@ services:
     image: microservices-bookstore/stock-check-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-stock-check:5432/stock_check_service
       - SPRING_DATASOURCE_USERNAME=admin
       - SPRING_DATASOURCE_PASSWORD=password
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-stock-check:5432/stock_check_service
       - SPRING_FLYWAY_USER=admin
       - SPRING_FLYWAY_PASSWORD=password
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
     depends_on:
       - api-gateway
       - postgres-stock-check
@@ -227,12 +231,12 @@ services:
     image: microservices-bookstore/message-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
-      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=broker:29092
       - SPRING_KAFKA_CONSUMER_GROUP_ID=${SPRING_KAFKA_CONSUMER_GROUP_ID}
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
-
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false -Deureka.client.serviceUrl.defaultZone=http://discovery-server:8761/eureka
     depends_on:
       - api-gateway
       - broker
