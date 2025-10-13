@@ -25,7 +25,18 @@ interface OrderBook {
   inStock: boolean;
 }
 
-const API_BASE_URL = 'http://localhost:8080/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE!;
+const HOST_FALLBACK = typeof window !== 'undefined'
+  ? window.location.hostname
+  : new URL(API_BASE_URL).hostname;
+
+// External dashboards (derive host at runtime; ports are the usual ones)
+const urls = {
+  eureka: `http://${HOST_FALLBACK}:8761/`,
+  zipkin: `http://${HOST_FALLBACK}:9411/zipkin/`,
+  prometheus: `http://${HOST_FALLBACK}:9090/`,
+  grafana: `http://${HOST_FALLBACK}:3001/`,
+};
 
 const GET_BOOKS = gql`
   query GetBooks {
@@ -314,28 +325,28 @@ const Home = () => {
             <li>
               <h3 className="text-xl font-semibold text-gray-800">Eureka</h3>
               <p className="text-gray-600 mb-2">Eureka is a service registry for service discovery in cloud environments.</p>
-              <a className="text-blue-500 hover:underline" href="http://localhost:8761/" target="_blank" rel="noopener noreferrer">
+              <a className="text-blue-500 hover:underline" href={urls.eureka} target="_blank" rel="noopener noreferrer">
                 Go to Eureka - View registered services and instances
               </a>
             </li>
             <li>
               <h3 className="text-xl font-semibold text-gray-800">Zipkin</h3>
               <p className="text-gray-600 mb-2">Zipkin is a distributed tracing system for monitoring and troubleshooting microservices.</p>
-              <a className="text-blue-500 hover:underline" href="http://localhost:9411/zipkin/" target="_blank" rel="noopener noreferrer">
+              <a className="text-blue-500 hover:underline" href={urls.zipkin} target="_blank" rel="noopener noreferrer">
                 Go to Zipkin - Visualize traces and track request flows
               </a>
             </li>
             <li>
               <h3 className="text-xl font-semibold text-gray-800">Prometheus</h3>
               <p className="text-gray-600 mb-2">Prometheus is a monitoring system and time series database.</p>
-              <a className="text-blue-500 hover:underline" href="http://localhost:9090/" target="_blank" rel="noopener noreferrer">
+              <a className="text-blue-500 hover:underline" href={urls.prometheus} target="_blank" rel="noopener noreferrer">
                 Go to Prometheus - Access metrics and set up alerts
               </a>
             </li>
             <li>
               <h3 className="text-xl font-semibold text-gray-800">Grafana</h3>
               <p className="text-gray-600 mb-2">Grafana is a visualization tool for monitoring and analyzing metrics.</p>
-              <a className="text-blue-500 hover:underline" href="http://localhost:3001/" target="_blank" rel="noopener noreferrer">
+              <a className="text-blue-500 hover:underline" href={urls.grafana} target="_blank" rel="noopener noreferrer">
                 Go to Grafana - Create and view dashboards
               </a>
             </li>

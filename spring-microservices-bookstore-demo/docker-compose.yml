@@ -11,8 +11,6 @@ services:
       - "27017"
     volumes:
       - ./databases/mongo-data:/data/db
-    profiles:
-      - infrastructure
 
   postgres-order:
     container_name: postgres-order
@@ -30,8 +28,6 @@ services:
       - "5431:5431"
     command: -p 5431
     restart: always
-    profiles:
-      - infrastructure
 
   postgres-stock-check:
     container_name: postgres-stock-check
@@ -46,8 +42,6 @@ services:
     ports:
       - "5432:5432"
     restart: always
-    profiles:
-      - infrastructure
 
   postgres-author:
     container_name: postgres-author
@@ -65,8 +59,6 @@ services:
       - "5433:5433"
     command: -p 5433
     restart: always
-    profiles:
-      - infrastructure
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.0.1
@@ -76,8 +68,6 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    profiles:
-      - infrastructure
 
   broker:
     image: confluentinc/cp-kafka:7.0.1
@@ -88,14 +78,14 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://broker:29092,OUTSIDE://${PUBLIC_HOST}:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    profiles:
-      - infrastructure
 
   ## Zipkin
   zipkin:
@@ -103,8 +93,6 @@ services:
     container_name: zipkin
     ports:
       - "9411:9411"
-    profiles:
-      - infrastructure
 
   ## Eureka Server
   discovery-server:
@@ -112,10 +100,14 @@ services:
     container_name: discovery-server
     ports:
       - "8761:8761"
+    depends_on:
+      - config-server
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-    profiles:
-      - discovery-config
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
+      - EUREKA_CLIENT_FETCH_REGISTRY=false
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
 
   ## Config Server
   config-server:
@@ -125,25 +117,29 @@ services:
       - "8888:8888"
     environment:
       - SPRING_PROFILES_ACTIVE=native
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
-    depends_on:
-      - discovery-server
-    profiles:
-      - discovery-config
+      - EUREKA_CLIENT_ENABLED=false
+      - SPRING_CLOUD_DISCOVERY_ENABLED=false
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
 
   api-gateway:
     image: microservices-bookstore/api-gateway:latest
     container_name: api-gateway
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     expose:
       - "8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY= TRACE
-    profiles:
-      - services
-
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+    depends_on:
+      - discovery-server
+      - config-server
 
   ## Book Service Docker Compose Config
   book-service:
@@ -151,10 +147,13 @@ services:
     image: microservices-bookstore/book-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/book_service
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - mongo
 
   ## Author Service Docker Compose Config
   author-service:
@@ -162,10 +161,18 @@ services:
     image: microservices-bookstore/author-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_R2DBC_URL=r2dbc:postgresql://postgres-author:5433/author_service
+      - SPRING_R2DBC_USERNAME=admin
+      - SPRING_R2DBC_PASSWORD=password
+      - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-author:5433/author_service
+      - SPRING_FLYWAY_USER=admin
+      - SPRING_FLYWAY_PASSWORD=password
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-author
 
   ## Order Service Docker Compose Config
   order-service:
@@ -173,10 +180,20 @@ services:
     image: microservices-bookstore/order-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-order:5431/order_service
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-order:5431/order_service
+      - SPRING_FLYWAY_USER=admin
+      - SPRING_FLYWAY_PASSWORD=password
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-order
 
   ## Stock Check Service Docker Compose Config
   stock-check-service:
@@ -184,10 +201,20 @@ services:
     image: microservices-bookstore/stock-check-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-stock-check:5432/stock_check_service
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_FLYWAY_URL=jdbc:postgresql://postgres-stock-check:5432/stock_check_service
+      - SPRING_FLYWAY_USER=admin
+      - SPRING_FLYWAY_PASSWORD=password
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE="http://discovery-server:8761/eureka"
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - postgres-stock-check
 
   ## Message Service Docker Compose Config
   message-service:
@@ -195,10 +222,16 @@ services:
     image: microservices-bookstore/message-service:latest
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.actuate.autoconfigure.metrics.SystemMetricsAutoConfiguration
+      - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=broker:29092
+      - SPRING_KAFKA_CONSUMER_GROUP_ID=${SPRING_KAFKA_CONSUMER_GROUP_ID}
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka
+
     depends_on:
       - api-gateway
-    profiles:
-      - services
+      - broker
+      - zookeeper
 
   ## Prometheus
   prometheus:
@@ -214,8 +247,6 @@ services:
       - stock-check-service
       - order-service
       - message-service
-    profiles:
-      - services
 
   ## Grafana
   grafana:
@@ -231,20 +262,19 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
-    profiles:
-      - services
-
 
   ## NextJS Frontend
   nextjs-frontend:
     container_name: nextjs-frontend
     image: microservices-bookstore/nextjs-frontend:latest
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${NEXT_PUBLIC_GRAPHQL_ENDPOINT}
+      - NEXT_PUBLIC_AUTHORS_ENDPOINT=${NEXT_PUBLIC_AUTHORS_ENDPOINT}
     depends_on:
       - api-gateway
-    profiles:
-      - services
 
 volumes:
   grafana_data:
