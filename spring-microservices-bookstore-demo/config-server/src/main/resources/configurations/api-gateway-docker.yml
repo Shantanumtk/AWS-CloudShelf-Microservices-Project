@@ -7,27 +7,27 @@ spring:
   cloud:
     gateway:
       routes:
-        # GraphQL (book-service) — frontend calls /api/graphql, gateway rewrites to service /graphql
+        # GraphQL (book-service) — Match both /api/graphql and /api/graphql/**
         - id: book-service
           uri: lb://book-service
           predicates:
-            - Path=/api/graphql/**
+            - Path=/api/graphql,/api/graphql/**
           filters:
-            - RewritePath=/api/graphql(?<segment>/?.*), /graphql${segment}
+            - RewritePath=/api/graphql(?<segment>/?.*), /graphql$\{segment}
 
         # Order REST endpoint
         - id: order-service
           uri: lb://order-service
           predicates:
-            - Path=/api/order
+            - Path=/api/order,/api/order/**
 
-        # Author REST endpoints (already exposed at /api/authors/** in the service)
+        # Author REST endpoints
         - id: author-service
           uri: lb://author-service
           predicates:
-            - Path=/api/authors/**
+            - Path=/api/authors,/api/authors/**
 
-        # Proxy Eureka UI through the gateway (handy for access)
+        # Proxy Eureka UI through the gateway
         - id: discovery-server
           uri: http://eureka:password@${app.eureka-server}:8761
           predicates:
@@ -48,7 +48,7 @@ spring:
           filters:
             - StripPrefix=1
 
-      # CORS Configuration - This is the correct place for Spring Cloud Gateway
+      # CORS Configuration
       globalcors:
         cors-configurations:
           '[/**]':
@@ -61,6 +61,7 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: true
+      
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin, RETAIN_UNIQUE
 

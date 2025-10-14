@@ -67,7 +67,13 @@ git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.g
 cd AWS-CloudShelf-Microservices-CPSC-465/spring-microservices-bookstore-demo
 
 echo "[*] Maven Build Package ..."
-sudo chown -R "$USER:$USER" .
+
 mvn clean package -DskipTests | tee maven.log
+
+echo "Run Create Env Script ..."
+bash create-env.sh
+
+echo "Run Start Services Script ..."
+bash start_services.sh
 
 echo "✅ Done"
