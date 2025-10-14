@@ -11,6 +11,8 @@ spring:
           uri: lb://book-service
           predicates:
             - Path=/api/graphql/**
+          filters:
+            - RewritePath=/api/graphql(?<segment>/?.*), /graphql$\{segment}
 
         - id: order-service
           uri: lb://order-service
