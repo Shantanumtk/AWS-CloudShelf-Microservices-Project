@@ -1,4 +1,3 @@
----
 services:
   ## Mongo Docker Compose Config
   mongo:
@@ -15,6 +14,7 @@ services:
   postgres-order:
     container_name: postgres-order
     image: postgres
+    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: order_service
       POSTGRES_USER: admin
@@ -32,6 +32,7 @@ services:
   postgres-stock-check:
     container_name: postgres-stock-check
     image: postgres
+    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: stock_check_service
       POSTGRES_USER: admin
@@ -46,6 +47,7 @@ services:
   postgres-author:
     container_name: postgres-author
     image: postgres
+    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: author_service
       POSTGRES_USER: admin
@@ -113,6 +115,8 @@ services:
     container_name: config-server
     ports:
       - "8888:8888"
+    volumes:  # ← ADDED: Mount config files as volume for instant updates
+      - ./config-server/src/main/resources/configurations:/app/resources/configurations:ro
     environment:
       - SPRING_PROFILES_ACTIVE=native
       - EUREKA_CLIENT_ENABLED=false
