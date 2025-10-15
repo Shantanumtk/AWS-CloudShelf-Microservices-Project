@@ -14,7 +14,6 @@ services:
   postgres-order:
     container_name: postgres-order
     image: postgres
-    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: order_service
       POSTGRES_USER: admin
@@ -32,7 +31,6 @@ services:
   postgres-stock-check:
     container_name: postgres-stock-check
     image: postgres
-    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: stock_check_service
       POSTGRES_USER: admin
@@ -47,7 +45,6 @@ services:
   postgres-author:
     container_name: postgres-author
     image: postgres
-    user: "999:999"  # ← ADDED: Fix PostgreSQL permissions
     environment:
       POSTGRES_DB: author_service
       POSTGRES_USER: admin
