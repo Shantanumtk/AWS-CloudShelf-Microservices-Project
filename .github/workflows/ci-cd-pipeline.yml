@@ -1,0 +1,151 @@
+name: Provision & Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ github-actions ]
+    paths:
+      - "terraform/**"
+      - "spring-microservices-bookstore-demo/**"
+      - ".github/workflows/ci-cd-pipeline.yml"
+
+env:
+  AWS_REGION: us-west-2
+  TF_WORKING_DIR: terraform
+  PROJECT: cloudshelf
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- AWS auth (access keys) ----
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ---- Terraform setup ----
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      # ---- Per-run SSH keypair (forces new EC2) ----
+      - name: Generate per-run SSH keypair
+        run: |
+          mkdir -p ~/.ssh
+          KEY_NAME="cloudshelf-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "KEY_NAME=$KEY_NAME" >> $GITHUB_ENV
+          ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/${KEY_NAME}
+          echo "KEY_PATH=$HOME/.ssh/${KEY_NAME}" >> $GITHUB_ENV
+          echo "PUB_KEY_PATH=$HOME/.ssh/${KEY_NAME}.pub" >> $GITHUB_ENV
+          echo "Generated key: $KEY_NAME"
+
+      - name: Import key pair into AWS
+        run: |
+          aws ec2 import-key-pair \
+            --key-name "$KEY_NAME" \
+            --public-key-material fileb://$PUB_KEY_PATH \
+            >/dev/null 2>&1 || true
+          echo "Imported AWS KeyPair: $KEY_NAME"
+
+      # ---- tfvars for this run ----
+      - name: Write terraform.auto.tfvars
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          RUNNER_IP=$(curl -s https://checkip.amazonaws.com)
+          cat > terraform.auto.tfvars <<EOF
+          region               = "${{ env.AWS_REGION }}"
+          project              = "${{ env.PROJECT }}"
+          vpc_cidr             = "10.20.0.0/16"
+          public_subnet_cidr   = "10.20.1.0/24"
+          az                   = "${{ env.AWS_REGION }}a"
+          allowed_ssh_cidr     = "${RUNNER_IP}/32"
+          allowed_web_cidr     = "0.0.0.0/0"
+          instance_type        = "t3.small"
+          key_name             = "${KEY_NAME}"
+          ssh_private_key_path = "${KEY_PATH}"
+          local_script_path    = "scripts/install-deps-only.sh"
+          EOF
+          echo "Wrote terraform.auto.tfvars with key $KEY_NAME"
+
+      # ---- Terraform apply (new EC2 because key changed) ----
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false -auto-approve
+
+      # ---- Capture EC2 public IP from outputs.tf ----
+      - name: Get EC2 public IP
+        id: tfout
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          IP=$(terraform output -raw ec2_public_ip)
+          echo "ec2_ip=$IP" >> $GITHUB_OUTPUT
+          echo "EC2 IP: $IP"
+
+      # ---- SSH prep & readiness ----
+      - name: Add host to known_hosts
+        run: ssh-keyscan -H ${{ steps.tfout.outputs.ec2_ip }} >> ~/.ssh/known_hosts
+
+      - name: Wait for SSH
+        run: |
+          for i in {1..30}; do
+            if ssh -i "$KEY_PATH" -o StrictHostKeyChecking=yes ubuntu@${{ steps.tfout.outputs.ec2_ip }} "echo ok" >/dev/null 2>&1; then
+              echo "SSH ready"
+              exit 0
+            fi
+            echo "Waiting for SSH ($i/30)..."
+            sleep 10
+          done
+          echo "SSH not ready in time" && exit 1
+
+      # ---- Build & start ON EC2 (everything runs remotely) ----
+      - name: Build & start on EC2
+        run: |
+          ssh -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
+          set -euo pipefail
+
+          # Ensure git exists (first boot)
+          if ! command -v git >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y git
+          fi
+
+          cd /home/ubuntu
+
+          # Clone/update repo
+          if [ ! -d "AWS-CloudShelf-Microservices-CPSC-465" ]; then
+            git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git
+          fi
+          cd AWS-CloudShelf-Microservices-CPSC-465
+          git fetch origin
+          git reset --hard origin/main
+
+          DEMO_DIR="spring-microservices-bookstore-demo"
+          cd "$DEMO_DIR"
+
+          # Make sure scripts are executable
+          chmod +x create-env.sh ci-script.sh cd-script.sh || true
+
+          echo "📝 Create .env from EC2 public IP"
+          bash create-env.sh
+
+          echo "🏗️  CI: build backend/frontend images (your script)"
+          bash ci-script.sh
+
+          echo "🚀 CD: bring up docker compose (your script)"
+          bash cd-script.sh
+
+          echo "📦 Running containers:"
+          docker ps --format '{{.Names}} -> {{.Status}}'
+          EOF
