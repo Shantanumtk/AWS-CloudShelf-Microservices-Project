@@ -4,6 +4,8 @@
 # FRONTEND=http://$IP:3000  (React) | BASE=http://$IP:8080 (Gateway via routes)
 set -u -o pipefail
 
+sleep 20  # wait a bit for services to be ready
+
 # --- Terraform output (run from your TF dir) ---
 IP=$(terraform output -raw public_ip 2>/dev/null || true)
 if [[ -z "${IP}" ]]; then

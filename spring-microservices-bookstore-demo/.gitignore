@@ -2,7 +2,7 @@
 /databases/
 
 # Ignore Grafana volume
-/grafana/
+#/grafana/
 
 HELP.md
 target/
