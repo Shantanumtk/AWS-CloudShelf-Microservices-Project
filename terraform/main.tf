@@ -106,6 +106,30 @@ resource "aws_security_group" "ec2_sg" {
     cidr_blocks = [var.allowed_web_cidr]
   }
 
+ingress {
+    description = "Discovery Server Port "
+    from_port   = 8761
+    to_port     = 8761
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
+  ingress {
+    description = "Zipkin Port "
+    from_port   = 9411
+    to_port     = 9411
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
+  ingress {
+    description = "Prometheus Port "
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
