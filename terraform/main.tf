@@ -106,7 +106,7 @@ resource "aws_security_group" "ec2_sg" {
     cidr_blocks = [var.allowed_web_cidr]
   }
 
-ingress {
+  ingress {
     description = "Discovery Server Port "
     from_port   = 8761
     to_port     = 8761

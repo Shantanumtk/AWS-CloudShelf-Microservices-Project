@@ -112,7 +112,7 @@ services:
     container_name: config-server
     ports:
       - "8888:8888"
-    volumes:  # ← keeps your mount for instant config updates
+    volumes:  # ← ADDED: Mount config files as volume for instant updates
       - ./config-server/src/main/resources/configurations:/app/resources/configurations:ro
     environment:
       - SPRING_PROFILES_ACTIVE=native
@@ -253,14 +253,12 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro  # <<< CHANGED (read-only)
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
       - book-service
       - stock-check-service
       - order-service
       - message-service
-      - node-exporter  # <<< ADDED
-      # - cadvisor      # <<< ADDED (if you keep cadvisor)
 
   ## Grafana
   grafana:
@@ -269,19 +267,13 @@ services:
     restart: always
     ports:
       - "3001:3000"
-    # links: [prometheus:prometheus]  # deprecated; network DNS works without this
-    depends_on:
-      - prometheus
+    links:
+      - prometheus:prometheus
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro   # <<< ADDED
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro     # <<< ADDED
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro                           # <<< ADDED
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
-      - GF_USERS_DEFAULT_THEME=dark                       # <<< ADDED
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/home.json  # <<< ADDED
 
   ## NextJS Frontend
   nextjs-frontend:
@@ -295,30 +287,6 @@ services:
       - NEXT_PUBLIC_AUTHORS_ENDPOINT=${NEXT_PUBLIC_AUTHORS_ENDPOINT}
     depends_on:
       - api-gateway
-
-  # === Host metrics (EC2) ===
-  node-exporter:                         # <<< ADDED
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    pid: host
-    command: ["--path.rootfs=/host"]
-    volumes:
-      - "/:/host:ro,rslave"
-    restart: unless-stopped
-
-  # === Container metrics (optional) ===
-  cadvisor:                              # <<< ADDED (optional)
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: cadvisor
-    privileged: true
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    restart: unless-stopped
-    ports:
-      - "8081:8080"  # optional external access to cAdvisor UI
 
 volumes:
   grafana_data:
