@@ -174,6 +174,9 @@ echo "Terraform PUBLIC_IP: $IP"
 
 printf '\n%-44s | %-6s | %-6s | %s\n' "CHECK" "HTTP" "RESULT" "DETAIL"
 printf -- '%.0s-' {1..90}; echo
+
+
+
 fails=0
 for i in $(seq 0 $((N-1))); do
   printf '%-44s | %-6s | %-6s | %s\n' "${NAMES[$i]}" "${STATUSES[$i]}" "${RESULTS[$i]}" "${DETAILS[$i]}"
@@ -185,4 +188,20 @@ if [[ $fails -eq 0 ]]; then
 else
   echo "OVERALL: FAIL (${fails} failing)"
 fi
+
+
+k6 run k6-load.js \
+  --env BASE="http://${IP}:8080" \
+  --env FRONT="http://${IP}:3000" \
+  --env PROM="http://${IP}:9090" \
+  --env GRAF="http://${IP}:3001" \
+  --env DUR=1m \
+  --env FRONT_VUS=20 \
+  --env AUTHORS_VUS=20 \
+  --env HEALTH_VUS=10 \
+  --env PROM_VUS=5 \
+  --env GRAFANA_VUS=5
+
+
 exit $fails
+
