@@ -88,7 +88,7 @@ services:
 
   ## Eureka Server
   discovery-server:
-    image: microservices-bookstore/discovery-server:latest
+    image: shpro123/discovery-server:latest
     container_name: discovery-server
     restart: always
     ports: ["8761:8761"]
@@ -101,7 +101,7 @@ services:
 
   ## Config Server
   config-server:
-    image: microservices-bookstore/config-server:latest
+    image: shpro123/config-server:latest
     container_name: config-server
     restart: always
     ports: ["8888:8888"]
@@ -115,7 +115,7 @@ services:
       - JAVA_TOOL_OPTIONS=-XX:-UseContainerSupport -Dmicrometer.system.metrics.enabled=false -Dspring.jmx.enabled=false
 
   api-gateway:
-    image: microservices-bookstore/api-gateway:latest
+    image: shpro123/api-gateway:latest
     container_name: api-gateway
     restart: always
     ports: ["${GATEWAY_PORT:-8080}:8080"]
@@ -143,7 +143,7 @@ services:
   ## Book Service
   book-service:
     container_name: book-service
-    image: microservices-bookstore/book-service:latest
+    image: shpro123/book-service:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=docker
@@ -159,7 +159,7 @@ services:
   ## Author Service
   author-service:
     container_name: author-service
-    image: microservices-bookstore/author-service:latest
+    image: shpro123/author-service:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=docker
@@ -180,7 +180,7 @@ services:
   ## Order Service
   order-service:
     container_name: order-service
-    image: microservices-bookstore/order-service:latest
+    image: shpro123/order-service:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=docker
@@ -205,7 +205,7 @@ services:
   ## Stock Check Service
   stock-check-service:
     container_name: stock-check-service
-    image: microservices-bookstore/stock-check-service:latest
+    image: shpro123/stock-check-service:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=docker
@@ -227,7 +227,7 @@ services:
   ## Message Service
   message-service:
     container_name: message-service
-    image: microservices-bookstore/message-service:latest
+    image: shpro123/message-service:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=docker
