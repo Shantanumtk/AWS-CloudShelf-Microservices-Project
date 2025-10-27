@@ -4,13 +4,12 @@ on:
   push:
     branches: [ github-actions ]
     paths:
-      - '**/*.java'
-      - '**/pom.xml'
-      - '**/Dockerfile'
+      - 'spring-microservices-bookstore-demo/**'
       - '.github/workflows/ci-pipeline.yml'
   workflow_dispatch:
 
 env:
+  ROOT_DIR: spring-microservices-bookstore-demo
   DOCKERHUB_NAMESPACE: shpro123
 
 jobs:
@@ -31,6 +30,7 @@ jobs:
           cache: maven
 
       - name: Maven package (skip tests)
+        working-directory: ${{ env.ROOT_DIR }}
         run: mvn -B -DskipTests package
 
       - name: Upload JARs for downstream jobs
@@ -38,14 +38,14 @@ jobs:
         with:
           name: built-jars
           path: |
-            discovery-server/target/*.jar
-            config-server/target/*.jar
-            api-gateway/target/*.jar
-            book-service/target/*.jar
-            author-service/target/*.jar
-            order-service/target/*.jar
-            stock-check-service/target/*.jar
-            message-service/target/*.jar
+            spring-microservices-bookstore-demo/discovery-server/target/*.jar
+            spring-microservices-bookstore-demo/config-server/target/*.jar
+            spring-microservices-bookstore-demo/api-gateway/target/*.jar
+            spring-microservices-bookstore-demo/book-service/target/*.jar
+            spring-microservices-bookstore-demo/author-service/target/*.jar
+            spring-microservices-bookstore-demo/order-service/target/*.jar
+            spring-microservices-bookstore-demo/stock-check-service/target/*.jar
+            spring-microservices-bookstore-demo/message-service/target/*.jar
 
   dockerize-backends:
     name: Build & Push backend images
@@ -71,6 +71,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: built-jars
+          # No 'path' -> preserves original directories under repo root
 
       - name: Compute short SHA
         id: vars
@@ -97,8 +98,8 @@ jobs:
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.svc }}
-          file: ./${{ matrix.svc }}/Dockerfile
+          context: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}
+          file: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
