@@ -15,9 +15,30 @@ env:
   DOCKERHUB_NAMESPACE: shpro123
 
 jobs:
+  build-backend-jars:
+    name: Maven package (all Java services)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spring-microservices-bookstore-demo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK 17 with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: mvn -B -DskipTests package
+        run: mvn -B -DskipTests package
+
   dockerize-backends:
     name: Build & Push backend images
     runs-on: ubuntu-latest
+    needs: build-backend-jars
     strategy:
       fail-fast: false
       matrix:
@@ -33,24 +54,24 @@ jobs:
 
     steps:
       - name: Checkout repository
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
 
+      # Sanity-check each service has what the Dockerfile expects
       - name: Validate service paths exist
         run: |
           root="spring-microservices-bookstore-demo"
           svc="${{ matrix.svc }}"
-          test -f "$root/$svc/Dockerfile" || { echo "Missing $root/$svc/Dockerfile"; exit 1; }
-          test -f "$root/$svc/pom.xml"    || { echo "Missing $root/$svc/pom.xml"; exit 1; }
-          test -d "$root/$svc/src"        || { echo "Missing $root/$svc/src/"; exit 1; }
-          echo "Paths OK for $svc"
+          echo "Validating $root/$svc ..."
+          test -f "$root/$svc/Dockerfile" || { echo "❌ Missing $root/$svc/Dockerfile"; exit 1; }
+          test -f "$root/$svc/pom.xml"    || { echo "❌ Missing $root/$svc/pom.xml"; exit 1; }
+          test -d "$root/$svc/src"        || { echo "❌ Missing $root/$svc/src/"; exit 1; }
+          echo "✅ Paths OK for $svc"
 
-      - name: Compute tags
+      - name: Compute short SHA
         id: vars
         run: |
-          short_sha="${GITHUB_SHA::7}"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "image=${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}" >> "$GITHUB_OUTPUT"
-          echo "tags=${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}:latest,${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -61,13 +82,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Compute image name and tags
+        id: meta
+        run: |
+          IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tags=${IMAGE}:latest,${IMAGE}:${{ steps.vars.outputs.sha_tag }}" >> "$GITHUB_OUTPUT"
+
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
         with:
-          # IMPORTANT: Dockerfiles copy from the repo subfolder root
+          # Dockerfiles are written to copy from repo subfolder root:
           context: ./spring-microservices-bookstore-demo
           file: ./spring-microservices-bookstore-demo/${{ matrix.svc }}/Dockerfile
           push: true
-          tags: ${{ steps.vars.outputs.tags }}
-          cache-from: type=registry,ref=${{ steps.vars.outputs.image }}:buildcache
-          cache-to: type=registry,ref=${{ steps.vars.outputs.image }}:buildcache,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          # Publish build cache for subsequent runs (omit cache-from on first run)
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
