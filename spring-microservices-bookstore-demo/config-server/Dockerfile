@@ -1,13 +1,14 @@
-# syntax=docker/dockerfile:1.7
-FROM maven:3.9-eclipse-temurin-17 AS build
-WORKDIR /workspace
-COPY ./pom.xml /workspace/pom.xml
-COPY ./config-server/pom.xml /workspace/config-server/pom.xml
-COPY ./config-server/src /workspace/config-server/src
-RUN --mount=type=cache,target=/root/.m2 mvn -q -B -f /workspace/config-server/pom.xml -DskipTests package
+#Dockerfile for Config Server
+
 FROM eclipse-temurin:17-jre
-RUN useradd -ms /bin/bash appuser
-USER appuser
+
+# run as non-root
+RUN useradd -ms /bin/bash app && mkdir -p /app && chown -R app:app /app
+USER app
 WORKDIR /app
-COPY --from=build /workspace/config-server/target/*.jar /app/app.jar
-ENTRYPOINT ["sh","-c","java $JAVA_TOOL_OPTIONS -jar /app/app.jar"]
+
+# CI/local mvn must build: config-server/target/*.jar
+COPY target/*.jar /app/app.jar
+
+# Honor JAVA_TOOL_OPTIONS (set via compose/K8s)
+ENTRYPOINT ["sh","-c","java $JAVA_TOOL_OPTIONS -Dserver.port=${SERVER_PORT} -jar /app/app.jar"]
