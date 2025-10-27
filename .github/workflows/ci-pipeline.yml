@@ -12,8 +12,6 @@ on:
 
 env:
   DOCKERHUB_NAMESPACE: shpro123
-  SHORT_SHA: ${{ github.sha && github.sha[0:7] || 'dev' }}
-  SHA_TAG: sha-${{ github.sha && github.sha[0:7] || 'dev' }}
 
 jobs:
   build-backend-jars:
@@ -74,6 +72,12 @@ jobs:
         with:
           name: built-jars
 
+      - name: Compute short SHA
+        id: vars
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "sha_tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -83,12 +87,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Compute tags
+      - name: Compute image name and tags
         id: meta
         run: |
           IMAGE=${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}
           echo "image=${IMAGE}" >> $GITHUB_OUTPUT
-          echo "tags=${IMAGE}:latest,${IMAGE}:${{ env.SHA_TAG }}" >> $GITHUB_OUTPUT
+          echo "tags=${IMAGE}:latest,${IMAGE}:${{ steps.vars.outputs.sha_tag }}" >> $GITHUB_OUTPUT
 
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
