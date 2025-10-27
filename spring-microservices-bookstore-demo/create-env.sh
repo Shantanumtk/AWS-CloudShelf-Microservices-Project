@@ -64,3 +64,8 @@ cat $ENV_FILE
 echo "================================"
 echo ""
 echo "✅ Done! .env file created successfully"
+
+echo "Build Frontend Image..."
+docker build -t microservices-bookstore/nextjs-frontend:latest ./frontend
+echo "✅ Frontend Docker image built successfully"
+
