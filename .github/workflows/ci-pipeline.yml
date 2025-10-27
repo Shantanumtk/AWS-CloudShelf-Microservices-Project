@@ -13,6 +13,7 @@ concurrency:
 
 env:
   DOCKERHUB_NAMESPACE: shpro123
+  ROOT_DIR: spring-microservices-bookstore-demo
 
 jobs:
   build-backend-jars:
@@ -20,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: spring-microservices-bookstore-demo
+        working-directory: ${{ env.ROOT_DIR }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,6 +35,63 @@ jobs:
 
       - name: mvn -B -DskipTests package
         run: mvn -B -DskipTests package
+
+      # Upload each service's JAR so the next job can download it
+      - name: Upload discovery-server jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-server-jar
+          path: ${{ env.ROOT_DIR }}/discovery-server/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload config-server jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-server-jar
+          path: ${{ env.ROOT_DIR }}/config-server/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload api-gateway jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-gateway-jar
+          path: ${{ env.ROOT_DIR }}/api-gateway/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload book-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-service-jar
+          path: ${{ env.ROOT_DIR }}/book-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload author-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: author-service-jar
+          path: ${{ env.ROOT_DIR }}/author-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload order-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-service-jar
+          path: ${{ env.ROOT_DIR }}/order-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload stock-check-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-check-service-jar
+          path: ${{ env.ROOT_DIR }}/stock-check-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload message-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: message-service-jar
+          path: ${{ env.ROOT_DIR }}/message-service/target/*.jar
+          if-no-files-found: error
 
   dockerize-backends:
     name: Build & Push backend images
@@ -56,16 +114,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Sanity-check each service has what the Dockerfile expects
-      - name: Validate service paths exist
+      # Download the JAR artifact for this service into its /target directory
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.svc }}-jar
+          path: ${{ env.ROOT_DIR }}/${{ matrix.svc }}/target
+
+      - name: Sanity check service layout & JAR
         run: |
-          root="spring-microservices-bookstore-demo"
+          root="${{ env.ROOT_DIR }}"
           svc="${{ matrix.svc }}"
-          echo "Validating $root/$svc ..."
           test -f "$root/$svc/Dockerfile" || { echo "❌ Missing $root/$svc/Dockerfile"; exit 1; }
           test -f "$root/$svc/pom.xml"    || { echo "❌ Missing $root/$svc/pom.xml"; exit 1; }
           test -d "$root/$svc/src"        || { echo "❌ Missing $root/$svc/src/"; exit 1; }
-          echo "✅ Paths OK for $svc"
+          ls -l "$root/$svc/target"/*.jar || { echo "❌ No JAR in $root/$svc/target"; exit 1; }
+          echo "✅ Layout & JAR OK for $svc"
 
       - name: Compute short SHA
         id: vars
@@ -92,10 +156,9 @@ jobs:
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
         with:
-          # Dockerfiles are written to copy from repo subfolder root:
-          context: ./spring-microservices-bookstore-demo
-          file: ./spring-microservices-bookstore-demo/${{ matrix.svc }}/Dockerfile
+          # Context = service folder so Dockerfile's "COPY target/*.jar" works
+          context: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}
+          file: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          # Publish build cache for subsequent runs (omit cache-from on first run)
           cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
