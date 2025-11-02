@@ -1,0 +1,164 @@
+name: ci-pipeline
+
+on:
+  push:
+    branches: [ github-actions ]
+    paths:
+      - 'spring-microservices-bookstore-demo/**'
+      - '.github/workflows/ci-pipeline.yml'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKERHUB_NAMESPACE: shpro123
+  ROOT_DIR: spring-microservices-bookstore-demo
+
+jobs:
+  build-backend-jars:
+    name: Maven package (all Java services)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.ROOT_DIR }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK 17 with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: mvn -B -DskipTests package
+        run: mvn -B -DskipTests package
+
+      # Upload each service's JAR so the next job can download it
+      - name: Upload discovery-server jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-server-jar
+          path: ${{ env.ROOT_DIR }}/discovery-server/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload config-server jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-server-jar
+          path: ${{ env.ROOT_DIR }}/config-server/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload api-gateway jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-gateway-jar
+          path: ${{ env.ROOT_DIR }}/api-gateway/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload book-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-service-jar
+          path: ${{ env.ROOT_DIR }}/book-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload author-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: author-service-jar
+          path: ${{ env.ROOT_DIR }}/author-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload order-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-service-jar
+          path: ${{ env.ROOT_DIR }}/order-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload stock-check-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-check-service-jar
+          path: ${{ env.ROOT_DIR }}/stock-check-service/target/*.jar
+          if-no-files-found: error
+
+      - name: Upload message-service jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: message-service-jar
+          path: ${{ env.ROOT_DIR }}/message-service/target/*.jar
+          if-no-files-found: error
+
+  dockerize-backends:
+    name: Build & Push backend images
+    runs-on: ubuntu-latest
+    needs: build-backend-jars
+    strategy:
+      fail-fast: false
+      matrix:
+        svc:
+          - discovery-server
+          - config-server
+          - api-gateway
+          - book-service
+          - author-service
+          - order-service
+          - stock-check-service
+          - message-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Download the JAR artifact for this service into its /target directory
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.svc }}-jar
+          path: ${{ env.ROOT_DIR }}/${{ matrix.svc }}/target
+
+      - name: Sanity check service layout & JAR
+        run: |
+          root="${{ env.ROOT_DIR }}"
+          svc="${{ matrix.svc }}"
+          test -f "$root/$svc/Dockerfile" || { echo "❌ Missing $root/$svc/Dockerfile"; exit 1; }
+          test -f "$root/$svc/pom.xml"    || { echo "❌ Missing $root/$svc/pom.xml"; exit 1; }
+          test -d "$root/$svc/src"        || { echo "❌ Missing $root/$svc/src/"; exit 1; }
+          ls -l "$root/$svc/target"/*.jar || { echo "❌ No JAR in $root/$svc/target"; exit 1; }
+          echo "✅ Layout & JAR OK for $svc"
+
+      - name: Compute short SHA
+        id: vars
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image name and tags
+        id: meta
+        run: |
+          IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tags=${IMAGE}:latest,${IMAGE}:${{ steps.vars.outputs.sha_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push ${{ matrix.svc }}
+        uses: docker/build-push-action@v6
+        with:
+          # Context = service folder so Dockerfile's "COPY target/*.jar" works
+          context: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}
+          file: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
