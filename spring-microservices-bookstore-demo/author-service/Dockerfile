@@ -10,4 +10,5 @@ WORKDIR /app
 COPY target/*.jar /app/app.jar
 
 # optional: honor JAVA_TOOL_OPTIONS (set in compose)
-ENTRYPOINT ["sh","-c","java $JAVA_TOOL_OPTIONS -Dserver.port=${SERVER_PORT} -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","exec java $JAVA_TOOL_OPTIONS -jar /app/app.jar"]
+

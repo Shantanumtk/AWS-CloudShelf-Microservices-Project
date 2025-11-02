@@ -10,4 +10,5 @@ WORKDIR /app
 COPY target/*.jar /app/app.jar
 
 # honor JAVA_TOOL_OPTIONS (e.g., -Xms, -Xmx, system props)
-ENTRYPOINT ["sh","-c","java $JAVA_TOOL_OPTIONS -Dserver.port=${SERVER_PORT} -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","exec java $JAVA_TOOL_OPTIONS -jar /app/app.jar"]
+
