@@ -32,19 +32,6 @@ jobs:
       - name: mvn -B -DskipTests package
         run: mvn -B -DskipTests package
 
-      - name: Upload discovery-server jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: discovery-server-jar
-          path: spring-microservices-bookstore-demo/discovery-server/target/*.jar
-          if-no-files-found: error
-
-      - name: Upload config-server jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: config-server-jar
-          path: spring-microservices-bookstore-demo/config-server/target/*.jar
-          if-no-files-found: error
 
       - name: Upload api-gateway jar
         uses: actions/upload-artifact@v4
@@ -96,8 +83,6 @@ jobs:
       fail-fast: false
       matrix:
         svc:
-          - discovery-server
-          - config-server
           - api-gateway
           - book-service
           - author-service
