@@ -11,17 +11,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DOCKERHUB_NAMESPACE: shpro123
-  ROOT_DIR: spring-microservices-bookstore-demo
-
 jobs:
   build-backend-jars:
     name: Maven package (all Java services)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ env.ROOT_DIR }}
+        working-directory: spring-microservices-bookstore-demo
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,56 +36,56 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: discovery-server-jar
-          path: ${{ env.ROOT_DIR }}/discovery-server/target/*.jar
+          path: spring-microservices-bookstore-demo/discovery-server/target/*.jar
           if-no-files-found: error
 
       - name: Upload config-server jar
         uses: actions/upload-artifact@v4
         with:
           name: config-server-jar
-          path: ${{ env.ROOT_DIR }}/config-server/target/*.jar
+          path: spring-microservices-bookstore-demo/config-server/target/*.jar
           if-no-files-found: error
 
       - name: Upload api-gateway jar
         uses: actions/upload-artifact@v4
         with:
           name: api-gateway-jar
-          path: ${{ env.ROOT_DIR }}/api-gateway/target/*.jar
+          path: spring-microservices-bookstore-demo/api-gateway/target/*.jar
           if-no-files-found: error
 
       - name: Upload book-service jar
         uses: actions/upload-artifact@v4
         with:
           name: book-service-jar
-          path: ${{ env.ROOT_DIR }}/book-service/target/*.jar
+          path: spring-microservices-bookstore-demo/book-service/target/*.jar
           if-no-files-found: error
 
       - name: Upload author-service jar
         uses: actions/upload-artifact@v4
         with:
           name: author-service-jar
-          path: ${{ env.ROOT_DIR }}/author-service/target/*.jar
+          path: spring-microservices-bookstore-demo/author-service/target/*.jar
           if-no-files-found: error
 
       - name: Upload order-service jar
         uses: actions/upload-artifact@v4
         with:
           name: order-service-jar
-          path: ${{ env.ROOT_DIR }}/order-service/target/*.jar
+          path: spring-microservices-bookstore-demo/order-service/target/*.jar
           if-no-files-found: error
 
       - name: Upload stock-check-service jar
         uses: actions/upload-artifact@v4
         with:
           name: stock-check-service-jar
-          path: ${{ env.ROOT_DIR }}/stock-check-service/target/*.jar
+          path: spring-microservices-bookstore-demo/stock-check-service/target/*.jar
           if-no-files-found: error
 
       - name: Upload message-service jar
         uses: actions/upload-artifact@v4
         with:
           name: message-service-jar
-          path: ${{ env.ROOT_DIR }}/message-service/target/*.jar
+          path: spring-microservices-bookstore-demo/message-service/target/*.jar
           if-no-files-found: error
 
   dockerize-backends:
@@ -116,11 +112,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.svc }}-jar
-          path: ${{ env.ROOT_DIR }}/${{ matrix.svc }}/target
+          path: spring-microservices-bookstore-demo/${{ matrix.svc }}/target
 
       - name: Sanity check service layout & JAR
         run: |
-          root="${{ env.ROOT_DIR }}"
+          root="spring-microservices-bookstore-demo"
           svc="${{ matrix.svc }}"
           test -f "$root/$svc/Dockerfile" || { echo "Missing $root/$svc/Dockerfile"; exit 1; }
           test -f "$root/$svc/pom.xml"    || { echo "Missing $root/$svc/pom.xml"; exit 1; }
@@ -146,15 +142,15 @@ jobs:
       - name: Compute image name and tags
         id: meta
         run: |
-          IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ matrix.svc }}"
+          IMAGE="shpro123/${{ matrix.svc }}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "tags=${IMAGE}:latest,${IMAGE}:${{ steps.vars.outputs.sha_tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}
-          file: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}/Dockerfile
+          context: ./spring-microservices-bookstore-demo/${{ matrix.svc }}
+          file: ./spring-microservices-bookstore-demo/${{ matrix.svc }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
@@ -163,17 +159,14 @@ jobs:
   dockerize-frontend:
     name: Build & Push frontend image
     runs-on: ubuntu-latest
-    env:
-      FRONTEND_DIR: ${{ env.ROOT_DIR }}/frontend
-      IMAGE_NAME: ${{ env.DOCKERHUB_NAMESPACE }}/frontend
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Sanity check frontend layout
         run: |
-          test -f "$FRONTEND_DIR/Dockerfile" || { echo "Missing $FRONTEND_DIR/Dockerfile"; exit 1; }
-          test -f "$FRONTEND_DIR/package.json" || { echo "Missing $FRONTEND_DIR/package.json"; exit 1; }
+          test -f "spring-microservices-bookstore-demo/frontend/Dockerfile" || { echo "Missing frontend/Dockerfile"; exit 1; }
+          test -f "spring-microservices-bookstore-demo/frontend/package.json" || { echo "Missing frontend/package.json"; exit 1; }
           echo "Frontend layout OK"
 
       - name: Compute short SHA
@@ -194,11 +187,11 @@ jobs:
       - name: Build & Push frontend
         uses: docker/build-push-action@v6
         with:
-          context: ${{ env.FRONTEND_DIR }}
-          file: ${{ env.FRONTEND_DIR }}/Dockerfile
+          context: ./spring-microservices-bookstore-demo/frontend
+          file: ./spring-microservices-bookstore-demo/frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_tag }}
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+            shpro123/frontend:latest
+            shpro123/frontend:${{ steps.vars.outputs.sha_tag }}
+          cache-from: type=registry,ref=shpro123/frontend:buildcache
+          cache-to: type=registry,ref=shpro123/frontend:buildcache,mode=max
