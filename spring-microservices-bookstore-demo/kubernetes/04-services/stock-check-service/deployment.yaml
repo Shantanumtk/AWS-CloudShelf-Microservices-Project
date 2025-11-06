@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: stock-check-service
-        image: cloudshelf/stock-check-service:latest
+        image: shpro123/stock-check-service:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080

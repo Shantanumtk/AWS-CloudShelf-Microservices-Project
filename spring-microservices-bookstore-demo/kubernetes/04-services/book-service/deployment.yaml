@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: book-service
-        image: cloudshelf/book-service:latest
+        image: shpro123/book-service:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8081

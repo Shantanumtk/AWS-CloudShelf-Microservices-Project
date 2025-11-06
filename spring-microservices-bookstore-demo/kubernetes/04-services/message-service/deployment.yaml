@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: message-service
-        image: cloudshelf/message-service:latest
+        image: shpro123/message-service:latest
         imagePullPolicy: Never
         envFrom:
         - configMapRef:
