@@ -1,26 +1,61 @@
-# Use the official Node.js image as the base image
-FROM node:18-alpine
+# Multi-stage build for Next.js - Optimized for production
+FROM node:20-alpine AS base
 
-# Set the working directory
+# Install dependencies only when needed
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy the package.json and package-lock.json files to the working directory
-COPY package*.json ./
+# Copy package files
+COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
-# Copy .env for Next.js app 
-COPY .env .env
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
 
-# Copy the rest of the application code to the working directory
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy all source files
 COPY . .
 
-# Build the Next.js application
+# Build without any environment variables
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Build the application
 RUN npm run build
 
-# Expose the port the app runs on
+# Production image - run Next.js standalone
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy necessary files from builder
+COPY --from=builder /app/public ./public
+
+# Automatically leverage output traces to reduce image size
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
 EXPOSE 3000
 
-# Start the Next.js application
-CMD ["npm", "start"]
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# API_GATEWAY_URL will be injected by Kubernetes ConfigMap at runtime
+# Start the server
+CMD ["node", "server.js"]

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: cloudshelf
+data:
+  API_GATEWAY_URL: "http://api-gateway.cloudshelf.svc.cluster.local:8080"
+  NODE_ENV: "production"
+  NEXT_TELEMETRY_DISABLED: "1"

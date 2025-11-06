@@ -125,11 +125,11 @@ jobs:
         run: |
           root="${{ env.ROOT_DIR }}"
           svc="${{ matrix.svc }}"
-          test -f "$root/$svc/Dockerfile" || { echo "❌ Missing $root/$svc/Dockerfile"; exit 1; }
-          test -f "$root/$svc/pom.xml"    || { echo "❌ Missing $root/$svc/pom.xml"; exit 1; }
-          test -d "$root/$svc/src"        || { echo "❌ Missing $root/$svc/src/"; exit 1; }
-          ls -l "$root/$svc/target"/*.jar || { echo "❌ No JAR in $root/$svc/target"; exit 1; }
-          echo "✅ Layout & JAR OK for $svc"
+          test -f "$root/$svc/Dockerfile" || { echo "Missing $root/$svc/Dockerfile"; exit 1; }
+          test -f "$root/$svc/pom.xml"    || { echo "Missing $root/$svc/pom.xml"; exit 1; }
+          test -d "$root/$svc/src"        || { echo "Missing $root/$svc/src/"; exit 1; }
+          ls -l "$root/$svc/target"/*.jar || { echo "No JAR in $root/$svc/target"; exit 1; }
+          echo "Layout & JAR OK for $svc"
 
       - name: Compute short SHA
         id: vars
@@ -156,9 +156,52 @@ jobs:
       - name: Build & Push ${{ matrix.svc }}
         uses: docker/build-push-action@v6
         with:
-          # Context = service folder so Dockerfile's "COPY target/*.jar" works
           context: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}
           file: ./${{ env.ROOT_DIR }}/${{ matrix.svc }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
           cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
+
+  dockerize-frontend:
+    name: Build & Push frontend image
+    runs-on: ubuntu-latest
+    env:
+      FRONTEND_DIR: ${{ env.ROOT_DIR }}/frontend
+      IMAGE_NAME: ${{ env.DOCKERHUB_NAMESPACE }}/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sanity check frontend layout
+        run: |
+          test -f "$FRONTEND_DIR/Dockerfile" || { echo "Missing $FRONTEND_DIR/Dockerfile"; exit 1; }
+          test -f "$FRONTEND_DIR/package.json" || { echo "Missing $FRONTEND_DIR/package.json"; exit 1; }
+          echo "Frontend layout OK"
+
+      - name: Compute short SHA
+        id: vars
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.FRONTEND_DIR }}
+          file: ${{ env.FRONTEND_DIR }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max

@@ -1,16 +1,20 @@
-// Apollo client for connecting to GraphQL endpoints.
+// apollo-client.ts - Updated to use proxy (no env vars needed!)
 import { ApolloClient, InMemoryCache } from '@apollo/client';
 
-const base = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-const GRAPHQL_URL =
-  process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT ||
-  (base ? `${base}/api/graphql` : 'http://localhost:8080/api/graphql');
+// ✅ Use relative URL - Next.js will proxy to API Gateway
+// No need for NEXT_PUBLIC_API_BASE anymore!
+const GRAPHQL_URL = '/graphql';
+
+console.log('[Apollo Client] GraphQL URL:', GRAPHQL_URL);
 
 const client = new ApolloClient({
   uri: GRAPHQL_URL,
   cache: new InMemoryCache(),
+  defaultOptions: {
+    watchQuery: {
+      fetchPolicy: 'cache-and-network',
+    },
+  },
 });
-
-
 
 export default client;
