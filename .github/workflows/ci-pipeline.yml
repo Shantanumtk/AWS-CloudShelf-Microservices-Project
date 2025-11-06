@@ -1,11 +1,7 @@
 name: ci-pipeline
 
 on:
-  push:
-    branches: [ github-actions ]
-    paths:
-      - 'spring-microservices-bookstore-demo/**'
-      - '.github/workflows/ci-pipeline.yml'
+  workflow_dispatch: {}   # Manual run from GitHub → Actions → ci-pipeline → Run workflow
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -31,7 +27,6 @@ jobs:
 
       - name: mvn -B -DskipTests package
         run: mvn -B -DskipTests package
-
 
       - name: Upload api-gateway jar
         uses: actions/upload-artifact@v4
