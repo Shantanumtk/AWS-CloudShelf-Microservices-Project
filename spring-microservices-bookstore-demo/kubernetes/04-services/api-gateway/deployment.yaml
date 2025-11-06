@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: api-gateway
-        image: cloudshelf/api-gateway:latest
+        image: shpro123/api-gateway:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080

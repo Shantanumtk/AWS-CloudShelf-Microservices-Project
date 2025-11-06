@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: cloudshelf/frontend:latest
+        image: shpro123/frontend:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 3000
