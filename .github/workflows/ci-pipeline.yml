@@ -36,7 +36,6 @@ jobs:
       - name: mvn -B -DskipTests package
         run: mvn -B -DskipTests package
 
-      # Upload each service's JAR so the next job can download it
       - name: Upload discovery-server jar
         uses: actions/upload-artifact@v4
         with:
@@ -109,12 +108,10 @@ jobs:
           - order-service
           - stock-check-service
           - message-service
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Download the JAR artifact for this service into its /target directory
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
         with:
