@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "stock-check-service")
+@FeignClient(name = "stock-check-service", url = "${stock.check.service.url}")
 public interface StockCheckClient {
 
     @GetMapping("/api/stockcheck")
