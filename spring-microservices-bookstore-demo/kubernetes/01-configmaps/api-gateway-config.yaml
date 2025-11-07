@@ -9,5 +9,6 @@ data:
   BOOK_SERVICE_URL: "http://book-service.cloudshelf.svc.cluster.local:8081"
   AUTHOR_SERVICE_URL: "http://author-service.cloudshelf.svc.cluster.local:8085"
   ORDER_SERVICE_URL: "http://order-service.cloudshelf.svc.cluster.local:8082"
+  cors.allowed.origins: "*"
   MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: "http://zipkin.cloudshelf.svc.cluster.local:9411/api/v2/spans"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus,metrics"

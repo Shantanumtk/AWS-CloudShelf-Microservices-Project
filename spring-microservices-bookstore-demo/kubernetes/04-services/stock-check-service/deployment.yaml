@@ -16,7 +16,7 @@ spec:
       containers:
       - name: stock-check-service
         image: shpro123/stock-check-service:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         envFrom:
@@ -24,6 +24,9 @@ spec:
             name: stock-check-service-config
         - secretRef:
             name: database-secrets
+        env:
+        - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+          value: "update"
         resources:
           requests:
             memory: "512Mi"
@@ -31,17 +34,24 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
-        livenessProbe:
+        startupProbe:
           httpGet:
             path: /actuator/health
             port: 8080
           initialDelaySeconds: 60
           periodSeconds: 10
+          failureThreshold: 60
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 0
+          periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 0
           periodSeconds: 5
 ---
 apiVersion: v1
