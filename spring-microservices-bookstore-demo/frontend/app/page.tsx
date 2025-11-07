@@ -25,12 +25,12 @@ interface OrderBook {
   inStock: boolean;
 }
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080').replace(/\/$/, '');
-const AUTHORS_ENDPOINT = process.env.NEXT_PUBLIC_AUTHORS_ENDPOINT || `${API_BASE_URL}/api/authors`;
+const API_BASE_URL = '/api';
+const AUTHORS_ENDPOINT = '/api/authors';
 
 const HOST_FALLBACK = typeof window !== 'undefined'
   ? window.location.hostname
-  : new URL(API_BASE_URL).hostname;
+  : 'localhost';
 
 // External dashboards (derive host at runtime; ports are the usual ones)
 const urls = {
@@ -110,7 +110,7 @@ const Home = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setNewBook({ ...newBook, [name]: value });
-    setValidationError(''); // Clear validation error on input change
+    setValidationError('');
   };
 
   const handleAddBook = async () => {
@@ -124,7 +124,7 @@ const Home = () => {
       await addBook({ variables: { bookRequest: { name, description, price } } });
       await refetchBooks();
       setNewBook({ id: '', name: '', description: '', price: 0 });
-      setValidationError(''); // Clear validation error on successful addition
+      setValidationError('');
     } catch (error) {
       console.error('Error adding book:', error);
     }
@@ -141,7 +141,7 @@ const Home = () => {
 
   const fetchAuthors = async () => {
     try {
-      const response = await axios.get(AUTHORS_ENDPOINT);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
+      const response = await axios.get(AUTHORS_ENDPOINT);
       setAuthors(response.data);
     } catch (error) {
       console.error('Error fetching authors:', error);
@@ -155,7 +155,7 @@ const Home = () => {
     }
 
     try {
-      await axios.post(AUTHORS_ENDPOINT, newAuthor);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
+      await axios.post(AUTHORS_ENDPOINT, newAuthor);
       await fetchAuthors();
       setNewAuthor({ id: '', name: '', birthDate: '' });
     } catch (error) {
@@ -165,7 +165,7 @@ const Home = () => {
 
   const deleteAuthor = async (id: string) => {
     try {
-      await axios.delete(`${AUTHORS_ENDPOINT}/${id}`);  // ✅ FIXED: Now uses AUTHORS_ENDPOINT
+      await axios.delete(`${AUTHORS_ENDPOINT}/${id}`);
       await fetchAuthors();
     } catch (error) {
       console.error('Error deleting author:', error);
@@ -184,7 +184,7 @@ const Home = () => {
     };
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/order`, order, {  // ✅ FIXED: Added /api prefix
+      const response = await axios.post(`${API_BASE_URL}/order`, order, {
         headers: { 'Content-Type': 'application/json' }
       });
 
@@ -357,7 +357,6 @@ const Home = () => {
       </div>
   );
 }
-
 
 // Wrap your Home component in ApolloProvider to provide Apollo Client instance
 export default function App() {
