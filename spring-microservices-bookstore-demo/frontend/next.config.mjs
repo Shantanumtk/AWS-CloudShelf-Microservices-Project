@@ -5,30 +5,8 @@ const nextConfig = {
   // Standalone output for optimized Docker builds
   output: 'standalone',
   
-  // Server-side rewrites (proxy) - reads API_GATEWAY_URL at RUNTIME
-  async rewrites() {
-    const apiGatewayUrl = process.env.API_GATEWAY_URL || 'http://localhost:8080';
-    
-    console.log('[Next.js Config] API Gateway URL:', apiGatewayUrl);
-    
-    return [
-      // Proxy all /api/* requests to API Gateway
-      {
-        source: '/api/:path*',
-        destination: `${apiGatewayUrl}/:path*`,
-      },
-      // GraphQL endpoint
-      {
-        source: '/graphql',
-        destination: `${apiGatewayUrl}/graphql`,
-      },
-      // Alternative GraphQL path
-      {
-        source: '/api/graphql',
-        destination: `${apiGatewayUrl}/graphql`,
-      },
-    ];
-  },
+  // No rewrites needed - Ingress will handle routing
+  // Browser will call /api/* and Ingress routes to api-gateway service
   
   // Security headers
   async headers() {
