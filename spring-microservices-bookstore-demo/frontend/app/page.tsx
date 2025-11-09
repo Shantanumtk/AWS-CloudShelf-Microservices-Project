@@ -40,33 +40,11 @@ const urls = {
   grafana: `http://${HOST_FALLBACK}:3001/`,
 };
 
-const GET_BOOKS = gql`
-  query GetBooks {
-    getAllBooks {
-      id
-      name
-      description
-      price
-    }
-  }
-`;
+const GET_BOOKS = gql`query GetBooks { getAllBooks { id name description price } }`;
 
-const ADD_BOOK = gql`
-  mutation CreateBook($bookRequest: BookRequest!) {
-    createBook(bookRequest: $bookRequest) {
-      id
-      name
-      description
-      price
-    }
-  }
-`;
+const ADD_BOOK = gql`mutation CreateBook($bookRequest: BookRequest!) { createBook(bookRequest: $bookRequest) { id name description price } }`;
 
-const DELETE_BOOK = gql`
-  mutation DeleteBook($id: ID!) {
-    deleteBook(id: $id)
-  }
-`;
+const DELETE_BOOK = gql`mutation DeleteBook($id: ID!) { deleteBook(id: $id) }`;
 
 const availableBooks: OrderBook[] = [
   { skuCode: 'design_patterns_gof', name: 'Design Patterns', price: 29, inStock: true },
@@ -208,7 +186,7 @@ const Home = () => {
           <h2 className="text-2xl font-semibold mb-5 text-gray-700">List of Books</h2>
           {booksLoading ? (
               <p>Loading...</p>
-          ) : (
+          ) : booksData?.getAllBooks ? (
               <ul className="list-disc pl-5 space-y-4">
                 {booksData.getAllBooks.map((book: Book) => (
                     <li key={book.id} className="flex justify-between items-center">
@@ -219,6 +197,8 @@ const Home = () => {
                     </li>
                 ))}
               </ul>
+          ) : (
+              <p className="text-red-500">Failed to load books. Please try again.</p>
           )}
         </section>
 
