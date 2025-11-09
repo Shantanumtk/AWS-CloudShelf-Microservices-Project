@@ -40,7 +40,10 @@ const urls = {
   grafana: `http://${HOST_FALLBACK}:3001/`,
 };
 
-const GET_BOOKS = gql`query GetBooks { getAllBooks { id name description price } }`;
+// Change mutations to use gql tag
+const GET_BOOKS_QUERY = "query GetBooks { getAllBooks { id name description price } }";
+const GET_BOOKS = { query: GET_BOOKS_QUERY, variables: {} };
+//Change mutations to use gql tag
 
 const ADD_BOOK = gql`mutation CreateBook($bookRequest: BookRequest!) { createBook(bookRequest: $bookRequest) { id name description price } }`;
 
