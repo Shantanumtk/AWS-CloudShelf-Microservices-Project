@@ -40,14 +40,11 @@ const urls = {
   grafana: `http://${HOST_FALLBACK}:3001/`,
 };
 
-// Change mutations to use gql tag
-const GET_BOOKS_QUERY = "query GetBooks { getAllBooks { id name description price } }";
-const GET_BOOKS = { query: GET_BOOKS_QUERY, variables: {} };
-//Change mutations to use gql tag
+const GET_BOOKS = gql`query GetBooks{getAllBooks{id name description price}}`;
 
-const ADD_BOOK = gql`mutation CreateBook($bookRequest: BookRequest!) { createBook(bookRequest: $bookRequest) { id name description price } }`;
+const ADD_BOOK = gql`mutation CreateBook($bookRequest:BookRequest!){createBook(bookRequest:$bookRequest){id name description price}}`;
 
-const DELETE_BOOK = gql`mutation DeleteBook($id: ID!) { deleteBook(id: $id) }`;
+const DELETE_BOOK = gql`mutation DeleteBook($id:ID!){deleteBook(id:$id)}`;
 
 const availableBooks: OrderBook[] = [
   { skuCode: 'design_patterns_gof', name: 'Design Patterns', price: 29, inStock: true },
