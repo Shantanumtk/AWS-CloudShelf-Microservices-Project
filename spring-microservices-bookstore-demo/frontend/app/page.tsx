@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { ApolloProvider, useQuery, useMutation, gql } from '@apollo/client';
-import client from '../apollo-client'
 
 interface Book {
   id: string;
@@ -27,12 +25,12 @@ interface OrderBook {
 
 const API_BASE_URL = '/api';
 const AUTHORS_ENDPOINT = '/api/authors';
+const GRAPHQL_ENDPOINT = '/api/graphql';
 
 const HOST_FALLBACK = typeof window !== 'undefined'
   ? window.location.hostname
   : 'localhost';
 
-// External dashboards (derive host at runtime; ports are the usual ones)
 const urls = {
   eureka: `http://${HOST_FALLBACK}:8761/`,
   zipkin: `http://${HOST_FALLBACK}:9411/zipkin/`,
@@ -40,22 +38,14 @@ const urls = {
   grafana: `http://${HOST_FALLBACK}:3001/`,
 };
 
-const GET_BOOKS = gql`query GetBooks{getAllBooks{id name description price}}`;
-
-const ADD_BOOK = gql`mutation CreateBook($bookRequest:BookRequest!){createBook(bookRequest:$bookRequest){id name description price}}`;
-
-const DELETE_BOOK = gql`mutation DeleteBook($id:ID!){deleteBook(id:$id)}`;
-
 const availableBooks: OrderBook[] = [
   { skuCode: 'design_patterns_gof', name: 'Design Patterns', price: 29, inStock: true },
   { skuCode: 'mythical_man_month', name: 'Mythical Man Month', price: 39, inStock: false },
 ];
 
 const Home = () => {
-  const { loading: booksLoading, data: booksData, refetch: refetchBooks } = useQuery(GET_BOOKS);
-  const [addBook] = useMutation(ADD_BOOK);
-  const [deleteBook] = useMutation(DELETE_BOOK);
-
+  const [booksLoading, setBooksLoading] = useState(true);
+  const [books, setBooks] = useState<Book[]>([]);
   const [newBook, setNewBook] = useState<Book>({
     id: '',
     name: '',
@@ -74,7 +64,75 @@ const Home = () => {
 
   const orderSectionRef = useRef<HTMLDivElement>(null);
 
+  const fetchBooks = async () => {
+    try {
+      setBooksLoading(true);
+      const response = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'query { getAllBooks { id name description price } }'
+        })
+      });
+      const data = await response.json();
+      if (data.data && data.data.getAllBooks) {
+        setBooks(data.data.getAllBooks);
+      }
+    } catch (error) {
+      console.error('Error fetching books:', error);
+    } finally {
+      setBooksLoading(false);
+    }
+  };
+
+  const handleAddBook = async () => {
+    const { name, description, price } = newBook;
+    if (!name || !description || price <= 0) {
+      setValidationError('All fields are required and price must be greater than zero.');
+      return;
+    }
+
+    try {
+      const response = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'mutation CreateBook($bookRequest: BookRequest!) { createBook(bookRequest: $bookRequest) { id name description price } }',
+          variables: { bookRequest: { name, description, price } }
+        })
+      });
+      const data = await response.json();
+      if (data.data) {
+        await fetchBooks();
+        setNewBook({ id: '', name: '', description: '', price: 0 });
+        setValidationError('');
+      }
+    } catch (error) {
+      console.error('Error adding book:', error);
+    }
+  };
+
+  const handleDeleteBook = async (id: string) => {
+    try {
+      const response = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'mutation DeleteBook($id: ID!) { deleteBook(id: $id) }',
+          variables: { id }
+        })
+      });
+      const data = await response.json();
+      if (data.data) {
+        await fetchBooks();
+      }
+    } catch (error) {
+      console.error('Error deleting book:', error);
+    }
+  };
+
   useEffect(() => {
+    fetchBooks();
     fetchAuthors();
   }, []);
 
@@ -89,32 +147,6 @@ const Home = () => {
     const { name, value } = e.target;
     setNewBook({ ...newBook, [name]: value });
     setValidationError('');
-  };
-
-  const handleAddBook = async () => {
-    const { name, description, price } = newBook;
-    if (!name || !description || price <= 0) {
-      setValidationError('All fields are required and price must be greater than zero.');
-      return;
-    }
-
-    try {
-      await addBook({ variables: { bookRequest: { name, description, price } } });
-      await refetchBooks();
-      setNewBook({ id: '', name: '', description: '', price: 0 });
-      setValidationError('');
-    } catch (error) {
-      console.error('Error adding book:', error);
-    }
-  };
-
-  const handleDeleteBook = async (id: string) => {
-    try {
-      await deleteBook({ variables: { id } });
-      await refetchBooks();
-    } catch (error) {
-      console.error('Error deleting book:', error);
-    }
   };
 
   const fetchAuthors = async () => {
@@ -181,14 +213,13 @@ const Home = () => {
       <div className="container mx-auto p-4 bg-gray-100 min-h-screen relative">
         <h1 className="text-3xl font-bold mt-3 mb-10 text-center text-gray-800">Spring Microservices Bookstore Demo</h1>
 
-        {/* Books Section */}
         <section className="mb-12 p-6 bg-white shadow-lg rounded-md">
           <h2 className="text-2xl font-semibold mb-5 text-gray-700">List of Books</h2>
           {booksLoading ? (
               <p>Loading...</p>
-          ) : booksData?.getAllBooks ? (
+          ) : books.length > 0 ? (
               <ul className="list-disc pl-5 space-y-4">
-                {booksData.getAllBooks.map((book: Book) => (
+                {books.map((book: Book) => (
                     <li key={book.id} className="flex justify-between items-center">
                       <div>
                         <span className="font-medium text-gray-800">{book.name}</span> - {book.description} - <span className="text-green-600">${book.price}</span>
@@ -235,7 +266,6 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Authors Section */}
         <section className="mb-12 p-6 bg-white shadow-lg rounded-md">
           <h2 className="text-2xl font-semibold mb-5 text-gray-700">List of Authors</h2>
           <ul className="list-disc pl-5 space-y-4">
@@ -279,7 +309,6 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Orders Section */}
         <section ref={orderSectionRef} className="mb-12 p-6 bg-white shadow-lg rounded-md">
           <h2 className="text-2xl font-semibold mb-4 text-gray-700">Place an Order</h2>
           <p className="mb-4 text-gray-600">Note that Design Patterns is in stock so the order will be placed successfully; however Mythical Man Month is not in stock.</p>
@@ -338,11 +367,4 @@ const Home = () => {
   );
 }
 
-// Wrap your Home component in ApolloProvider to provide Apollo Client instance
-export default function App() {
-    return (
-        <ApolloProvider client={client}>
-            <Home />
-        </ApolloProvider>
-    );
-}
+export default Home;
