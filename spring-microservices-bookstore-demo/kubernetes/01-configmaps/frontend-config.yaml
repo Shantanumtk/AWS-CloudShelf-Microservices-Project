@@ -4,6 +4,8 @@ metadata:
   name: frontend-config
   namespace: cloudshelf
 data:
-  API_GATEWAY_URL: "http://api-gateway.cloudshelf.svc.cluster.local:8080"
+  NEXT_PUBLIC_API_BASE: "http://${PUBLIC_IP}:32250/api"
+  NEXT_PUBLIC_GRAPHQL_ENDPOINT: "http://${PUBLIC_IP}:32250/api/graphql"
+  NEXT_PUBLIC_AUTHORS_ENDPOINT: "http://${PUBLIC_IP}:32250/api/authors"
   NODE_ENV: "production"
   NEXT_TELEMETRY_DISABLED: "1"
