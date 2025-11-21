@@ -13,6 +13,34 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+echo "Installing Docker"
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+
+echo "Installing Kubectl"
+curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/
+kubectl version --client
+
+echo "Installing Minikube"
+curl -LO "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64"
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+rm minikube-linux-amd64
+minikube version
+
+echo "Starting Minikube Cluster with Docker driver"
+minikube start --driver=docker --cpus=4 --memory=14000
+
+echo "Sanity Check"
+kubectl get nodes
+kubectl cluster-info
+minikube status
+
+echo "Installation Complete!"
+
 # Get PUBLIC_IP
 PUBLIC_IP=$(curl -s http://checkip.amazonaws.com)
 if [ -z "$PUBLIC_IP" ]; then
@@ -21,20 +49,37 @@ if [ -z "$PUBLIC_IP" ]; then
 fi
 print_info "Using PUBLIC_IP: $PUBLIC_IP"
 
+# Enable Ingress addon
+print_info "Ensuring Ingress addon is enabled..."
+minikube addons enable ingress
+
+# Wait for ingress-nginx namespace
+print_info "Waiting for ingress-nginx namespace..."
+timeout 60 bash -c 'until kubectl get namespace ingress-nginx &> /dev/null; do sleep 2; done' || print_error "Timeout"
+
+# Wait for Ingress controller to be ready and get its NodePort
+print_info "Waiting for Ingress controller service..."
+timeout 120 bash -c 'until kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; do sleep 2; done' || print_error "Timeout"
+
+# Get the Ingress NodePort
+INGRESS_PORT=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[0].nodePort}')
+print_success "Ingress NodePort: $INGRESS_PORT"
+
 # Create temp directory for ConfigMaps
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 cp -r kubernetes/* "$TEMP_DIR/"
 
-# Replace PUBLIC_IP in ConfigMaps
-print_info "Replacing \${PUBLIC_IP} in ConfigMaps..."
+# Replace PUBLIC_IP and INGRESS_PORT in ConfigMaps
+print_info "Replacing \${PUBLIC_IP} and port in ConfigMaps..."
 find "$TEMP_DIR/01-configmaps" -type f -name "*.yaml" -exec sed -i "s|\${PUBLIC_IP}|$PUBLIC_IP|g" {} \;
+find "$TEMP_DIR/01-configmaps" -type f -name "*.yaml" -exec sed -i "s|:32250|:$INGRESS_PORT|g" {} \;
 
 # Deploy namespace
 print_info "Creating namespace..."
 kubectl apply -f kubernetes/00-namespace/
 
-# Deploy ConfigMaps (with replaced PUBLIC_IP)
+# Deploy ConfigMaps (with replaced PUBLIC_IP and port)
 print_info "Deploying ConfigMaps..."
 kubectl apply -f "$TEMP_DIR/01-configmaps/"
 
@@ -63,23 +108,33 @@ sleep 30
 print_info "Deploying Ingress..."
 kubectl apply -f kubernetes/05-ingress/
 
-print_info "Waiting for Ingress controller..."
+# Wait for Ingress controller to be ready
+print_info "Waiting for Ingress controller pods..."
 kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod \
   --selector=app.kubernetes.io/component=controller \
-  --timeout=300s || true
+  --timeout=300s || print_error "Timeout"
+
+# After deploying everything, add this at the end:
+echo "[$(date)] Setting up port forwarding for Ingress..."
+su - ubuntu -c "
+    INGRESS_PORT=\$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[0].nodePort}')
+    nohup kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller \$INGRESS_PORT:80 --address=0.0.0.0 > /tmp/ingress-forward.log 2>&1 &
+    echo 'Port forwarding started on port '\$INGRESS_PORT
+"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 print_success "Deployment Complete!"
 echo ""
 echo "Access URLs:"
-echo "  Frontend:    http://${PUBLIC_IP}:32250/"
-echo "  API Gateway: http://${PUBLIC_IP}:32250/api/graphql"
-echo "  Authors API: http://${PUBLIC_IP}:32250/api/authors"
+echo "  Frontend:    http://${PUBLIC_IP}:${INGRESS_PORT}/"
+echo "  API Gateway: http://${PUBLIC_IP}:${INGRESS_PORT}/api/graphql"
+echo "  Authors API: http://${PUBLIC_IP}:${INGRESS_PORT}/api/authors"
 echo ""
 echo "Useful Commands:"
 echo "  kubectl get pods -n cloudshelf"
 echo "  kubectl get ingress -n cloudshelf"
+echo "  kubectl get svc -n ingress-nginx"
 echo "  kubectl logs -f deployment/frontend -n cloudshelf"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
