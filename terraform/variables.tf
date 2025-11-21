@@ -16,6 +16,12 @@ variable "ami_id" {
   default     = "ami-0e2c8caa4b6378d8c"
 }
 
+variable "key_name" {
+  description = "SSH key name"
+  type        = string
+  default     = "cloudshelf-key"
+}
+
 variable "github_repo" {
   description = "GitHub repository URL"
   type        = string

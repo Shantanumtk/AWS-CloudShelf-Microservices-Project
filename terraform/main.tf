@@ -100,34 +100,11 @@ resource "aws_security_group" "cloudshelf_sg" {
   }
 }
 
-# SSH Key
-resource "tls_private_key" "cloudshelf_key" {
-  count     = fileexists("${path.module}/../.ssh/cloudshelf-key.pem") ? 0 : 1
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "local_file" "private_key" {
-  count           = fileexists("${path.module}/../.ssh/cloudshelf-key.pem") ? 0 : 1
-  content         = tls_private_key.cloudshelf_key[0].private_key_pem
-  filename        = "${path.module}/../.ssh/cloudshelf-key.pem"
-  file_permission = "0400"
-}
-
-resource "aws_key_pair" "cloudshelf_key" {
-  key_name   = "cloudshelf-key"
-  public_key = fileexists("${path.module}/../.ssh/cloudshelf-key.pem") ? file("${path.module}/../.ssh/cloudshelf-key.pub") : tls_private_key.cloudshelf_key[0].public_key_openssh
-
-  tags = {
-    Name = "cloudshelf-key"
-  }
-}
-
 # EC2 Instance
 resource "aws_instance" "cloudshelf_instance" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
-  key_name               = aws_key_pair.cloudshelf_key.key_name
+  key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.cloudshelf_sg.id]
   subnet_id              = aws_subnet.cloudshelf_public_subnet.id
 

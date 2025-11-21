@@ -15,6 +15,6 @@ git checkout ${github_branch}
 # Run deployment
 cd spring-microservices-bookstore-demo
 chmod 755 deploy.sh
-sudo -u ubuntu bash deploy.sh
+bash deploy.sh
 
 echo "[$(date)] Setup complete!"
