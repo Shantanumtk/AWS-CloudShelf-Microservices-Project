@@ -31,21 +31,16 @@ rm minikube-linux-amd64
 minikube version
 
 echo "Starting Minikube Cluster with Docker driver"
-# Run as current user, not root
-if [ "$EUID" -eq 0 ]; then
-    # If running as root, switch to ubuntu user
-    su - ubuntu -c "minikube start --driver=docker --cpus=4 --memory=14000"
-else
-    # If already non-root user
-    minikube start --driver=docker --cpus=4 --memory=14000
-fi
+# Use sg to run with docker group permissions
+sg docker -c "minikube start --driver=docker --cpus=4 --memory=14000"
 
 echo "Sanity Check"
-kubectl get nodes
-kubectl cluster-info
-minikube status
+sg docker -c "kubectl get nodes"
+sg docker -c "kubectl cluster-info"
+sg docker -c "minikube status"
 
 echo "Installation Complete!"
+
 
 # Run deployment
 cd spring-microservices-bookstore-demo
