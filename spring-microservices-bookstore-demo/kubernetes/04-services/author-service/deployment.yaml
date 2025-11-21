@@ -16,7 +16,7 @@ spec:
       containers:
       - name: author-service
         image: shpro123/author-service:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8085
         envFrom:

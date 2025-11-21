@@ -16,7 +16,7 @@ spec:
       containers:
       - name: message-service
         image: shpro123/message-service:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: message-service-config

@@ -16,7 +16,7 @@ spec:
       containers:
       - name: book-service
         image: shpro123/book-service:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8081
         envFrom:
