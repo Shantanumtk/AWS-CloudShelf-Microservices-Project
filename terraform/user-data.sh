@@ -12,6 +12,12 @@ git clone ${github_repo}
 cd AWS-CloudShelf-Microservices-Project
 git checkout ${github_branch}
 
+echo "Installing Docker"
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+
 # Run deployment
 cd spring-microservices-bookstore-demo
 chmod 755 deploy.sh

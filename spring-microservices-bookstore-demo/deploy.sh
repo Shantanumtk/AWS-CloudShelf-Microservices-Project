@@ -13,12 +13,6 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "Installing Docker"
-sudo apt update
-sudo apt install -y docker.io
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-
 echo "Installing Kubectl"
 curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 chmod +x kubectl
