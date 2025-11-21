@@ -87,14 +87,6 @@ kubectl wait --namespace ingress-nginx \
   --selector=app.kubernetes.io/component=controller \
   --timeout=300s || print_error "Timeout"
 
-# After deploying everything, add this at the end:
-echo "[$(date)] Setting up port forwarding for Ingress..."
-su - ubuntu -c "
-    INGRESS_PORT=\$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[0].nodePort}')
-    nohup kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller \$INGRESS_PORT:80 --address=0.0.0.0 > /tmp/ingress-forward.log 2>&1 &
-    echo 'Port forwarding started on port '\$INGRESS_PORT
-"
-
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 print_success "Deployment Complete!"
