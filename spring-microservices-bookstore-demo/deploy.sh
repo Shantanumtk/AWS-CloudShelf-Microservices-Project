@@ -13,28 +13,6 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "Installing Kubectl"
-curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-kubectl version --client
-
-echo "Installing Minikube"
-curl -LO "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64"
-sudo install minikube-linux-amd64 /usr/local/bin/minikube
-rm minikube-linux-amd64
-minikube version
-
-echo "Starting Minikube Cluster with Docker driver"
-minikube start --driver=docker --cpus=4 --memory=14000
-
-echo "Sanity Check"
-kubectl get nodes
-kubectl cluster-info
-minikube status
-
-echo "Installation Complete!"
-
 # Get PUBLIC_IP
 PUBLIC_IP=$(curl -s http://checkip.amazonaws.com)
 if [ -z "$PUBLIC_IP" ]; then
