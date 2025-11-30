@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/Header';
 import { BookCard } from '@/components/BookCard';
@@ -9,32 +9,50 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Book, SearchFilters } from '@/types';
-import { searchService } from '@/lib/api';
-import { Loader, SlidersHorizontal, X } from 'lucide-react';
+import { useBookSearch } from '@/hooks/useBookSearch';
+import { Loader, SlidersHorizontal, X, SearchX } from 'lucide-react';
 
-export default function SearchPage() {
+function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const query = searchParams.get('q') || '';
+  const initialQuery = searchParams.get('q') || '';
   const categoryParam = searchParams.get('category');
 
-  const [books, setBooks] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
-
-  // Filter states
-  const [filters, setFilters] = useState<SearchFilters>({
-    category: categoryParam || undefined,
-    priceRange: undefined,
-    rating: undefined,
-    inStockOnly: false,
-    sortBy: 'relevance',
-  });
-
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
+
+  // ✅ USE THE HOOK - This has the Levenshtein fuzzy matching!
+  const {
+    results: books,
+    isLoading: loading,
+    error,
+    query,
+    setQuery,
+    filters,
+    setFilters,
+    totalResults: total,
+  } = useBookSearch({
+    initialQuery,
+    initialFilters: {
+      category: categoryParam || undefined,
+      priceRange: undefined,
+      rating: undefined,
+      inStockOnly: false,
+      sortBy: 'relevance',
+    },
+    debounceMs: 300,
+    enableFuzzyMatch: true,
+    fuzzyThreshold: 0.6, // 60% similarity threshold for word matching
+  });
+
+  // Sync URL changes to the hook
+  useEffect(() => {
+    const urlQuery = searchParams.get('q') || '';
+    if (urlQuery !== query) {
+      setQuery(urlQuery);
+    }
+  }, [searchParams]);
 
   const categories = [
     'Fiction',
@@ -49,40 +67,18 @@ export default function SearchPage() {
     'Self-Help',
   ];
 
-  useEffect(() => {
-    if (query) {
-      performSearch();
-    }
-  }, [query, filters]);
-
-  const performSearch = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await searchService.search(query, filters);
-      setBooks(response.data.data);
-      setTotal(response.data.total);
-    } catch (err) {
-      setError('Failed to search books');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCategoryFilter = (category: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      category: prev.category === category ? undefined : category,
-    }));
+    setFilters({
+      ...filters,
+      category: filters.category === category ? undefined : category,
+    });
   };
 
   const handleRatingFilter = (rating: number) => {
-    setFilters((prev) => ({
-      ...prev,
-      rating: prev.rating === rating ? undefined : rating,
-    }));
+    setFilters({
+      ...filters,
+      rating: filters.rating === rating ? undefined : rating,
+    });
   };
 
   const handlePriceFilter = () => {
@@ -90,20 +86,20 @@ export default function SearchPage() {
     const max = parseFloat(priceMax);
 
     if (!isNaN(min) && !isNaN(max) && min <= max) {
-      setFilters((prev) => ({
-        ...prev,
+      setFilters({
+        ...filters,
         priceRange: [min, max],
-      }));
+      });
     }
   };
 
   const clearPriceFilter = () => {
     setPriceMin('');
     setPriceMax('');
-    setFilters((prev) => ({
-      ...prev,
+    setFilters({
+      ...filters,
       priceRange: undefined,
-    }));
+    });
   };
 
   const clearAllFilters = () => {
@@ -130,7 +126,7 @@ export default function SearchPage() {
       <Header
         cartCount={0}
         wishlistCount={0}
-        onSearch={(q) => router.push(`/search?q=${q}`)}
+        onSearch={(q) => router.push(`/search?q=${encodeURIComponent(q)}`)}
         isAuthenticated={false}
       />
 
@@ -172,12 +168,12 @@ export default function SearchPage() {
                   <h3 className="font-semibold mb-3">Sort By</h3>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
-                    value={filters.sortBy}
+                    value={filters.sortBy || 'relevance'}
                     onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        sortBy: e.target.value as any,
-                      }))
+                      setFilters({
+                        ...filters,
+                        sortBy: e.target.value as SearchFilters['sortBy'],
+                      })
                     }
                   >
                     <option value="relevance">Relevance</option>
@@ -274,12 +270,12 @@ export default function SearchPage() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={filters.inStockOnly}
+                      checked={filters.inStockOnly || false}
                       onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
+                        setFilters({
+                          ...filters,
                           inStockOnly: e.target.checked,
-                        }))
+                        })
                       }
                       className="w-4 h-4"
                     />
@@ -345,7 +341,7 @@ export default function SearchPage() {
                     In Stock
                     <button
                       onClick={() =>
-                        setFilters((prev) => ({ ...prev, inStockOnly: false }))
+                        setFilters({ ...filters, inStockOnly: false })
                       }
                       className="ml-1"
                     >
@@ -365,16 +361,64 @@ export default function SearchPage() {
               <Card>
                 <CardContent className="p-12 text-center">
                   <p className="text-destructive mb-4">{error}</p>
-                  <Button onClick={performSearch}>Try Again</Button>
+                  <Button onClick={() => setQuery(query)}>Try Again</Button>
                 </CardContent>
               </Card>
-            ) : books.length === 0 ? (
+            ) : books.length === 0 && query ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                  {/* Icon */}
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                    <SearchX className="w-8 h-8 text-muted-foreground" />
+                  </div>
+
+                  {/* Main Message */}
+                  <h3 className="text-xl font-semibold text-foreground mb-2">
+                    No Results Found
+                  </h3>
+
+                  <p className="text-muted-foreground mb-2 max-w-md">
+                    We couldn&apos;t find any books matching{' '}
+                    <span className="font-medium text-foreground">
+                      &ldquo;{query}&rdquo;
+                    </span>
+                  </p>
+
+                  {/* Helpful Tips */}
+                  <div className="bg-muted/50 rounded-lg p-4 mb-6 max-w-lg text-left">
+                    <p className="text-sm text-muted-foreground mb-2 font-medium">
+                      Need help? Visit our Contact Us or try the following:
+                    </p>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li>Check your spelling</li>
+                      <li>Use more general terms</li>
+                      <li>Search by author or use our filters for genres</li>
+                    </ul>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => router.push('/search')}
+                    >
+                      Clear Search
+                    </Button>
+                    <Button onClick={() => router.push('/browse')}>
+                      Browse All Books
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : books.length === 0 && !query ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <p className="text-muted-foreground mb-4">
-                    No books found matching your criteria
+                    Enter a search term to find books
                   </p>
-                  <Button onClick={clearAllFilters}>Clear Filters</Button>
+                  <Button onClick={() => router.push('/browse')}>
+                    Browse All Books
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
@@ -395,5 +439,20 @@ export default function SearchPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+// Wrap with Suspense for useSearchParams
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <Loader className="animate-spin" size={32} />
+        </div>
+      }
+    >
+      <SearchPageContent />
+    </Suspense>
   );
 }

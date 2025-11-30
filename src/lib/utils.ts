@@ -4,7 +4,19 @@ import { twMerge } from 'tailwind-merge';
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+export function stringToNumberId(id: string): number {
+  // If it's already a number in string form ("123"), just parse it
+  const parsed = parseInt(id, 10);
+  if (!isNaN(parsed)) return parsed;
 
+  // Otherwise, hash the string to a deterministic number
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
 export const formatPrice = (price: number): string => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

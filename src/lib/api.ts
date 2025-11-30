@@ -1,217 +1,354 @@
-import axios, { AxiosInstance } from 'axios';
-import { getDummyBooks, searchDummyBooks, getDummyBooksByCategory, getDummyBookById } from './dummyData';
+// ===========================================
+// lib/api.ts - CloudShelf/BookVerse API Client
+// ===========================================
+// 
+// This is the "bridge" between the Next.js frontend and the
+// Spring Boot microservices backend running on Minikube.
+//
+// Key Features:
+// - GraphQL client for Book Service
+// - REST client for Author/Order services
+// - Automatic fallback to dummy data when USE_DUMMY_DATA=true
+// - Type-safe transformations between backend and frontend models
+// ===========================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080/api';
+import {
+  Book,
+  BackendBookResponse,
+  BackendAuthorResponse,
+  BackendOrderResponse,
+  BackendReviewResponse,
+  BackendUserProfileResponse,
+  transformBackendBook,
+  transformBackendAuthor,
+  transformBackendReview,
+  transformBackendUserProfile,
+  GraphQLResponse,
+  GetAllBooksResponse,
+  CreateBookResponse,
+  DeleteBookResponse,
+  BookInput,
+  OrderInput,
+  AuthorInput,
+  Author,
+  Review,
+  User,
+  SearchFilters,
+  PaginatedResponse,
+} from '@/types';
+
+import {
+  getDummyBooks,
+  searchDummyBooks,
+  getDummyBooksByCategory,
+  getDummyBookById,
+  DUMMY_BOOKS,
+} from './dummyData';
+
+import { stringToNumberId } from './utils';
+
+// ===========================================
+// Configuration
+// ===========================================
+
+// Helper to detect if we are running on the Server (Node.js) or Browser
+const isServer = typeof window === 'undefined';
+
+// 1. Get the Backend IP (Server-Side Only)
+const SERVER_HOST = process.env.MINIKUBE_API_HOST || 'http://127.0.0.1:40029';
+
+// 2. Determine the GraphQL Endpoint
+// - Server: Talk directly to Minikube (bypassing the Proxy to avoid "Relative URL" errors)
+// - Browser: Talk to the Next.js Proxy (to avoid CORS errors)
+const GRAPHQL_ENDPOINT = isServer 
+  ? `${SERVER_HOST}/api/graphql`
+  : '/api/proxy/graphql';
+
+// 3. Determine the REST Base URL
+// Same logic as above
+const API_BASE_URL = isServer
+  ? `${SERVER_HOST}/api`
+  : '/api/proxy';
+
 const USE_DUMMY_DATA = process.env.NEXT_PUBLIC_USE_DUMMY_DATA === 'true';
 
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+// Debug logging
+const DEBUG = process.env.NEXT_PUBLIC_DEBUG_MODE === 'true';
 
-// Request interceptor
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
+function logDebug(message: string, data?: unknown) {
+  if (DEBUG) {
+    const env = isServer ? '[SERVER]' : '[CLIENT]';
+    console.log(`${env} [API] ${message}`, data || '');
   }
-);
+}
 
-// Book Service with dummy data fallback
+// ===========================================
+// GraphQL Client
+// ===========================================
+
+interface GraphQLRequestOptions {
+  query: string;
+  variables?: Record<string, unknown>;
+}
+
+async function graphqlFetch<T>(options: GraphQLRequestOptions): Promise<GraphQLResponse<T>> {
+  const { query, variables } = options;
+  
+  logDebug(`GraphQL Request to ${GRAPHQL_ENDPOINT}`, { query, variables });
+  
+  try {
+    const response = await fetch(GRAPHQL_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Add auth header if available
+        ...(typeof window !== 'undefined' && localStorage.getItem('authToken')
+          ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
+          : {}),
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data: GraphQLResponse<T> = await response.json();
+    
+    logDebug('GraphQL Response', data);
+    
+    if (data.errors && data.errors.length > 0) {
+      console.error('[API] GraphQL Errors:', data.errors);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('[API] GraphQL fetch failed:', error);
+    throw error;
+  }
+}
+
+// ===========================================
+// REST Client
+// ===========================================
+
+async function restFetch<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  
+  logDebug(`REST Request to ${url}`, options);
+  
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(typeof window !== 'undefined' && localStorage.getItem('authToken')
+        ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
+        : {}),
+      ...options?.headers,
+    },
+  };
+
+  const response = await fetch(url, config);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  logDebug('REST Response', data);
+  return data;
+}
+
+// ===========================================
+// Book Service (GraphQL)
+// ===========================================
+
 export const bookService = {
-  getBooks: async (page = 1, limit = 12) => {
+  /**
+   * Get all books from the backend
+   * Falls back to dummy data if USE_DUMMY_DATA is true or if API fails
+   */
+  getBooks: async (page = 1, limit = 12): Promise<{ data: PaginatedResponse<Book> }> => {
     if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for getBooks');
       const dummyData = getDummyBooks(page, limit);
-      return {
-        data: {
-          data: dummyData.data,
-          total: dummyData.total,
-          page: dummyData.page,
-          limit: dummyData.limit,
-          hasMore: dummyData.hasMore,
-        },
-      };
+      return { data: dummyData };
     }
+
     try {
-      return await apiClient.get('/books', { params: { page, limit } });
+      const response = await graphqlFetch<GetAllBooksResponse>({
+        query: `
+          query GetAllBooks {
+            getAllBooks {
+              id
+              name
+              description
+              price
+            }
+          }
+        `,
+      });
+
+      if (response.data?.getAllBooks) {
+        const books = response.data.getAllBooks.map(transformBackendBook);
+        
+        // Apply pagination
+        const start = (page - 1) * limit;
+        const end = start + limit;
+        const paginatedBooks = books.slice(start, end);
+
+        return {
+          data: {
+            data: paginatedBooks,
+            total: books.length,
+            page,
+            limit,
+            hasMore: end < books.length,
+          },
+        };
+      }
+
+      // Fallback to dummy data if no books returned
+      logDebug('No books from API, falling back to dummy data');
+      return { data: getDummyBooks(page, limit) };
     } catch (error) {
-      console.warn('API request failed, falling back to dummy data:', error);
-      const dummyData = getDummyBooks(page, limit);
-      return {
-        data: {
-          data: dummyData.data,
-          total: dummyData.total,
-          page: dummyData.page,
-          limit: dummyData.limit,
-          hasMore: dummyData.hasMore,
-        },
-      };
+      console.warn('[API] getBooks failed, falling back to dummy data:', error);
+      return { data: getDummyBooks(page, limit) };
     }
   },
 
-  getBook: async (bookId: string) => {
+  /**
+   * Get a single book by ID
+   */
+  getBook: async (bookId: string): Promise<{ data: Book | undefined }> => {
+    // Force log to verify we are running this code
+    console.log(`\n[!!! DIAGNOSTIC] Fetching Book ID: ${bookId}`);
+    console.log(`[!!! DIAGNOSTIC] Environment: ${typeof window === 'undefined' ? 'SERVER (Node)' : 'CLIENT (Browser)'}`);
+    console.log(`[!!! DIAGNOSTIC] Target URL: ${GRAPHQL_ENDPOINT}`);
+
     if (USE_DUMMY_DATA) {
       const book = getDummyBookById(bookId);
       return { data: book };
     }
+
     try {
-      return await apiClient.get(`/books/${bookId}`);
+      const response = await graphqlFetch<GetAllBooksResponse>({
+        query: `
+          query GetAllBooks {
+            getAllBooks {
+              id
+              name
+              description
+              price
+            }
+          }
+        `,
+      });
+
+      if (response.data?.getAllBooks) {
+        const backendBook = response.data.getAllBooks.find(b => b.id === bookId);
+        
+        if (backendBook) {
+          console.log(`[!!! DIAGNOSTIC] ✅ Found book: ${backendBook.name}`);
+          return { data: transformBackendBook(backendBook) };
+        } else {
+          console.error(`[!!! DIAGNOSTIC] ❌ Book ID not found in list. Available IDs:`, response.data.getAllBooks.map(b => b.id));
+        }
+      }
+      
+      return { data: getDummyBookById(bookId) };
     } catch (error) {
-      console.warn('API request failed, falling back to dummy data:', error);
-      const book = getDummyBookById(bookId);
-      return { data: book };
+      // This is the important part!
+      console.error('[!!! DIAGNOSTIC] 💥 CRITICAL FAILURE:', error);
+      return { data: getDummyBookById(bookId) };
     }
   },
 
+  /**
+   * Alias for getBook (consistency)
+   */
   getBookById: async (bookId: string) => {
-    // Alias for consistency with other pages
     return bookService.getBook(bookId);
   },
 
-  searchBooks: async (query: string, filters?: Record<string, any>) => {
+  /**
+   * Create a new book
+   */
+  createBook: async (book: BookInput): Promise<{ data: Book | null }> => {
     if (USE_DUMMY_DATA) {
-      const results = searchDummyBooks(query);
-      return { data: { data: results, total: results.length } };
+      console.warn('[API] createBook not available in dummy data mode');
+      return { data: null };
     }
-    try {
-      return await apiClient.get('/search', { params: { q: query, ...filters } });
-    } catch (error) {
-      console.warn('API request failed, falling back to dummy data:', error);
-      const results = searchDummyBooks(query);
-      return { data: { data: results, total: results.length } };
-    }
-  },
 
-  getBooksByCategory: async (category: string) => {
-    if (USE_DUMMY_DATA) {
-      const results = getDummyBooksByCategory(category);
-      return { data: { data: results, total: results.length } };
-    }
     try {
-      return await apiClient.get('/books/category', { params: { category } });
-    } catch (error) {
-      console.warn('API request failed, falling back to dummy data:', error);
-      const results = getDummyBooksByCategory(category);
-      return { data: { data: results, total: results.length } };
-    }
-  },
-};
-
-// Cart Service with dummy data fallback
-export const cartService = {
-  getCart: async (userId: string) => {
-    if (USE_DUMMY_DATA) {
-      // Return dummy cart data
-      return {
-        data: {
-          userId,
-          items: getDummyBooks(1, 3).data.map((book, idx) => ({
-            bookId: book._id,
-            book,
-            quantity: idx + 1,
+      const response = await graphqlFetch<CreateBookResponse>({
+        query: `
+          mutation CreateBook($bookRequest: BookRequest!) {
+            createBook(bookRequest: $bookRequest) {
+              id
+              name
+              description
+              price
+            }
+          }
+        `,
+        variables: {
+          bookRequest: {
+            name: book.name,
+            description: book.description,
             price: book.price,
-            subtotal: book.price * (idx + 1),
-          })),
-          totalItems: 3,
-          totalPrice: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          },
         },
-      };
-    }
-    try {
-      return await apiClient.get(`/cart/${userId}`);
+      });
+
+      if (response.data?.createBook) {
+        return { data: transformBackendBook(response.data.createBook) };
+      }
+
+      return { data: null };
     } catch (error) {
-      console.warn('Cart API failed, falling back to dummy data:', error);
-      return {
-        data: {
-          userId,
-          items: [],
-          totalItems: 0,
-          totalPrice: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      };
+      console.error('[API] createBook failed:', error);
+      return { data: null };
     }
   },
 
-  addToCart: async (userId: string, bookId: string, qty: number) => {
+  /**
+   * Delete a book by ID
+   */
+  deleteBook: async (bookId: string): Promise<{ data: boolean }> => {
     if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
+      console.warn('[API] deleteBook not available in dummy data mode');
+      return { data: false };
     }
+
     try {
-      return await apiClient.post(`/cart/${userId}/items`, { bookId, qty });
+      const response = await graphqlFetch<DeleteBookResponse>({
+        query: `
+          mutation DeleteBook($id: ID!) {
+            deleteBook(id: $id)
+          }
+        `,
+        variables: { id: bookId },
+      });
+
+      return { data: response.data?.deleteBook ?? false };
     } catch (error) {
-      console.warn('Add to cart API failed:', error);
-      return { data: { success: false } };
+      console.error('[API] deleteBook failed:', error);
+      return { data: false };
     }
   },
 
-  updateCartItem: async (userId: string, bookId: string, qty: number) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
-    }
-    try {
-      return await apiClient.put(`/cart/${userId}/items/${bookId}`, { qty });
-    } catch (error) {
-      console.warn('Update cart API failed:', error);
-      return { data: { success: false } };
-    }
-  },
-
-  removeCartItem: async (userId: string, bookId: string) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
-    }
-    try {
-      return await apiClient.delete(`/cart/${userId}/items/${bookId}`);
-    } catch (error) {
-      console.warn('Remove from cart API failed:', error);
-      return { data: { success: false } };
-    }
-  },
-
-  removeFromCart: async (userId: string, bookId: string) => {
-    // Alias for backward compatibility
-    return cartService.removeCartItem(userId, bookId);
-  },
-
-  checkout: async (userId: string) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { orderId: 'dummy-order-123' } };
-    }
-    try {
-      return await apiClient.post(`/cart/${userId}/checkout`);
-    } catch (error) {
-      console.warn('Checkout API failed:', error);
-      return { data: { orderId: null } };
-    }
-  },
-};
-
-// Search Service with dummy data fallback
-export const searchService = {
-  search: async (query: string, filters?: any) => {
+  /**
+   * Search books
+   */
+  searchBooks: async (
+    query: string,
+    filters?: SearchFilters
+  ): Promise<{ data: PaginatedResponse<Book> }> => {
     if (USE_DUMMY_DATA) {
       let results = searchDummyBooks(query);
       
@@ -235,15 +372,8 @@ export const searchService = {
         results.sort((a, b) => a.price - b.price);
       } else if (filters?.sortBy === 'rating') {
         results.sort((a, b) => b.rating - a.rating);
-      } else if (filters?.sortBy === 'newest') {
-        // Newest books first (assuming they have publishedDate)
-        results.sort((a, b) => {
-          const dateA = new Date(a.publishedDate || 0);
-          const dateB = new Date(b.publishedDate || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
       }
-      
+
       return {
         data: {
           data: results,
@@ -254,10 +384,56 @@ export const searchService = {
         },
       };
     }
+
     try {
-      return await apiClient.get('/search', { params: { q: query, ...filters } });
+      // Backend doesn't have search, so we fetch all and filter client-side
+      const response = await graphqlFetch<GetAllBooksResponse>({
+        query: `
+          query GetAllBooks {
+            getAllBooks {
+              id
+              name
+              description
+              price
+            }
+          }
+        `,
+      });
+
+      if (response.data?.getAllBooks) {
+        const books = response.data.getAllBooks.map(transformBackendBook);
+        
+        // Client-side search (backend books have limited fields)
+        const lowerQuery = query.toLowerCase();
+        const results = books.filter(book =>
+          book.title.toLowerCase().includes(lowerQuery) ||
+          book.description.toLowerCase().includes(lowerQuery)
+        );
+
+        return {
+          data: {
+            data: results,
+            total: results.length,
+            page: 1,
+            limit: results.length,
+            hasMore: false,
+          },
+        };
+      }
+
+      // Fallback to dummy search
+      const results = searchDummyBooks(query);
+      return {
+        data: {
+          data: results,
+          total: results.length,
+          page: 1,
+          limit: results.length,
+          hasMore: false,
+        },
+      };
     } catch (error) {
-      console.warn('Search API failed, falling back to dummy data:', error);
+      console.warn('[API] searchBooks failed, falling back to dummy data:', error);
       const results = searchDummyBooks(query);
       return {
         data: {
@@ -270,544 +446,736 @@ export const searchService = {
       };
     }
   },
+
+  /**
+   * Get books by category
+   */
+  getBooksByCategory: async (category: string): Promise<{ data: { data: Book[]; total: number } }> => {
+    if (USE_DUMMY_DATA) {
+      const results = getDummyBooksByCategory(category);
+      return { data: { data: results, total: results.length } };
+    }
+
+    // Backend doesn't have category support
+    const results = getDummyBooksByCategory(category);
+    return { data: { data: results, total: results.length } };
+  },
 };
 
-// Recommendation Service with dummy data fallback
-export const recommendationService = {
-  getUserRecommendations: async (userId: string) => {
+// ===========================================
+// Author Service (REST)
+// ===========================================
+
+export const authorService = {
+  /**
+   * Get all authors
+   */
+  getAllAuthors: async (): Promise<Author[]> => {
     if (USE_DUMMY_DATA) {
-      const recommendations = getDummyBooks(1, 4).data;
-      return { data: recommendations };
+      return [
+        { id: '1', name: 'Erich Gamma', birthDate: '1961-03-13' },
+        { id: '2', name: 'Andrew Hunt', birthDate: '1964-02-19' },
+      ];
     }
+
     try {
-      return await apiClient.get(`/reco/user/${userId}`);
+      const response = await restFetch<BackendAuthorResponse[]>('/authors');
+      return response.map(transformBackendAuthor);
     } catch (error) {
-      console.warn('Recommendation API failed, falling back to dummy data:', error);
-      const recommendations = getDummyBooks(1, 4).data;
-      return { data: recommendations };
+      console.warn('[API] getAllAuthors failed:', error);
+      return [];
     }
   },
 
-  getSimilarBooks: async (bookId: string) => {
+  /**
+   * Create a new author
+   */
+  createAuthor: async (author: AuthorInput): Promise<Author | null> => {
     if (USE_DUMMY_DATA) {
-      const similar = getDummyBooks(1, 4).data;
-      return { data: similar };
+      console.warn('[API] createAuthor not available in dummy data mode');
+      return null;
     }
+
     try {
-      return await apiClient.get(`/reco/book/${bookId}`);
+      const response = await restFetch<BackendAuthorResponse>('/authors', {
+        method: 'POST',
+        body: JSON.stringify(author),
+      });
+      return transformBackendAuthor(response);
     } catch (error) {
-      console.warn('Similar books API failed, falling back to dummy data:', error);
-      const similar = getDummyBooks(1, 4).data;
-      return { data: similar };
+      console.error('[API] createAuthor failed:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Delete an author by ID
+   */
+  deleteAuthor: async (id: string): Promise<boolean> => {
+    if (USE_DUMMY_DATA) {
+      console.warn('[API] deleteAuthor not available in dummy data mode');
+      return false;
+    }
+
+    try {
+      await restFetch(`/authors/${id}`, { method: 'DELETE' });
+      return true;
+    } catch (error) {
+      console.error('[API] deleteAuthor failed:', error);
+      return false;
+    }
+  },
+};
+
+// ===========================================
+// Order Service (REST)
+// ===========================================
+
+export const orderService = {
+  /**
+   * Place a new order
+   */
+  placeOrder: async (order: OrderInput): Promise<{ data: BackendOrderResponse | null }> => {
+    if (USE_DUMMY_DATA) {
+      return {
+        data: {
+          id: Date.now(),
+          orderNumber: `ORD-${Date.now()}`,
+          orderLineItemsDtoList: order.orderLineItemsDtoList,
+        },
+      };
+    }
+
+    try {
+      const response = await restFetch<BackendOrderResponse>('/order', {
+        method: 'POST',
+        body: JSON.stringify(order),
+      });
+      return { data: response };
+    } catch (error) {
+      console.error('[API] placeOrder failed:', error);
+      return { data: null };
+    }
+  },
+
+  /**
+   * Get order by ID
+   */
+  getOrderById: async (id: string): Promise<{ data: BackendOrderResponse | null }> => {
+    if (USE_DUMMY_DATA) {
+      return { data: null };
+    }
+
+    try {
+      const response = await restFetch<BackendOrderResponse>(`/order/${id}`);
+      return { data: response };
+    } catch (error) {
+      console.error('[API] getOrderById failed:', error);
+      return { data: null };
+    }
+  },
+};
+
+// ===========================================
+// Cart Service (Local/Dummy)
+// ===========================================
+
+export const cartService = {
+  getCart: async (userId: string) => {
+    if (USE_DUMMY_DATA) {
+      const books = getDummyBooks(1, 3).data;
+      return {
+        data: {
+          userId,
+          items: books.map((book, idx) => ({
+            bookId: book._id,
+            book,
+            quantity: idx + 1,
+            price: book.price,
+            subtotal: book.price * (idx + 1),
+          })),
+          totalItems: books.length,
+          totalPrice: books.reduce((sum, book, idx) => sum + book.price * (idx + 1), 0),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    }
+    // Cart service not implemented in backend
+    return {
+      data: {
+        userId,
+        items: [],
+        totalItems: 0,
+        totalPrice: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  },
+
+  addToCart: async (_userId: string, _bookId: string, _qty: number) => {
+    return { data: { success: true } };
+  },
+
+  updateCartItem: async (_userId: string, _bookId: string, _qty: number) => {
+    return { data: { success: true } };
+  },
+
+  removeCartItem: async (_userId: string, _bookId: string) => {
+    return { data: { success: true } };
+  },
+
+  removeFromCart: async (userId: string, bookId: string) => {
+    return cartService.removeCartItem(userId, bookId);
+  },
+
+  checkout: async (_userId: string) => {
+    return { data: { orderId: `ORD-${Date.now()}` } };
+  },
+};
+
+// ===========================================
+// Review Service (Dummy)
+// ===========================================
+
+// ===========================================
+// Review Service (REST - Hisham's reviews-service)
+// ===========================================
+// Endpoint: /api/proxy/reviews (proxied to reviews-service)
+// 
+// Backend Schema (PostgreSQL):
+// - id: BIGSERIAL PK
+// - book_id: BIGINT (⚠️ Should be string to match MongoDB Book._id)
+// - user_id: BIGINT
+// - rating: INT (1-5)
+// - comment: TEXT
+// - created_at: TIMESTAMP
+// ===========================================
+
+export const reviewService = {
+  /**
+   * Get all reviews for a specific book
+   * Endpoint: GET /api/proxy/reviews/book/{bookId}
+   */
+  getBookReviews: async (bookId: string): Promise<{ data: Review[] }> => {
+    // Dummy data for development/fallback
+    const dummyReviews: Review[] = [
+      {
+        _id: '1',
+        bookId,
+        userId: 'user1',
+        userName: 'John Smith',
+        rating: 5,
+        text: 'Absolutely loved this book! Could not put it down.',
+        verifiedPurchase: true,
+        createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        helpful: 12,
+      },
+      {
+        _id: '2',
+        bookId,
+        userId: 'user2',
+        userName: 'Sarah Johnson',
+        rating: 4,
+        text: 'Great read with compelling content. Highly recommend!',
+        verifiedPurchase: true,
+        createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+        helpful: 8,
+      },
+    ];
+
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for getBookReviews');
+      return { data: dummyReviews };
+    }
+
+    try {
+      // ⚠️ Note: Backend expects bookId as BIGINT (Long)
+      // If bookId is a MongoDB ObjectId string, this may fail
+      // You may need to maintain a mapping or use a numeric ID
+      const numericId = stringToNumberId(bookId);
+      const backendReviews = await restFetch<BackendReviewResponse[]>(
+        `/proxy/reviews/book/${numericId}`
+      );
+
+      // Transform backend responses to frontend format
+      const reviews = backendReviews.map((review) => 
+        transformBackendReview(review, 'Anonymous User')
+      );
+
+      logDebug(`Fetched ${reviews.length} reviews for book ${bookId}`);
+      return { data: reviews };
+    } catch (error) {
+      console.warn('[API] getBookReviews failed, falling back to dummy data:', error);
+      return { data: dummyReviews };
+    }
+  },
+
+  /**
+   * Get average rating for a book
+   * Endpoint: GET /api/proxy/reviews/book/{bookId}/average-rating
+   */
+  getBookRatings: async (bookId: string) => {
+    const dummyRating = {
+      bookId,
+      averageRating: 4.5,
+      totalRatings: 127,
+      distribution: { 5: 80, 4: 30, 3: 12, 2: 3, 1: 2 },
+    };
+
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for getBookRatings');
+      return { data: dummyRating };
+    }
+
+    try {
+      const response = await restFetch<{ bookId: number; averageRating: number }>(
+        `/proxy/reviews/book/${bookId}/average-rating`
+      );
+
+      return {
+        data: {
+          bookId: response.bookId.toString(),
+          averageRating: response.averageRating,
+          totalRatings: 0, // Not provided by backend
+          distribution: {}, // Not provided by backend
+        },
+      };
+    } catch (error) {
+      console.warn('[API] getBookRatings failed, falling back to dummy data:', error);
+      return { data: dummyRating };
+    }
+  },
+
+  /**
+   * Create a new review
+   * Endpoint: POST /api/proxy/reviews
+   * 
+   * Backend expects: { book_id: number, user_id: number, rating: number, comment: string }
+   */
+  createReview: async (
+    bookId: string,
+    userId: string,
+    rating: number,
+    text: string
+  ): Promise<{ data: { success: boolean; reviewId?: string } }> => {
+    if (USE_DUMMY_DATA) {
+      return { data: { success: true, reviewId: `review-${Date.now()}` } };
+    }
+
+    try {
+      // FIX: Convert String IDs to Numbers so Postgres doesn't crash
+      const reviewPayload = {
+        book_id: stringToNumberId(bookId),
+        user_id: stringToNumberId(userId),
+        rating,
+        comment: text,
+      };
+
+      console.log('[API] Creating review with payload:', reviewPayload);
+
+      const response = await restFetch<BackendReviewResponse>(
+        '/proxy/reviews',
+        {
+          method: 'POST',
+          body: JSON.stringify(reviewPayload),
+        }
+      );
+
+      return {
+        data: {
+          success: true,
+          reviewId: response.id.toString(),
+        },
+      };
+    } catch (error) {
+      console.error('[API] createReview failed:', error);
+      return { data: { success: false } };
+    }
+  },
+
+  /**
+   * Delete a review
+   * Endpoint: DELETE /api/proxy/reviews/{id}
+   */
+  deleteReview: async (reviewId: string): Promise<{ data: { success: boolean } }> => {
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for deleteReview');
+      return { data: { success: true } };
+    }
+
+    try {
+      await restFetch<void>(`/proxy/reviews/${reviewId}`, {
+        method: 'DELETE',
+      });
+      return { data: { success: true } };
+    } catch (error) {
+      console.error('[API] deleteReview failed:', error);
+      return { data: { success: false } };
+    }
+  },
+};
+
+// ===========================================
+// Recommendation Service (Now using REAL data)
+// ===========================================
+
+export const recommendationService = {
+  getUserRecommendations: async (_userId: string) => {
+    // FIX: Fetch REAL books from the backend instead of dummy data
+    // This ensures the IDs actually exist when you click them.
+    try {
+      // Just fetch the first 4 real books as "recommendations"
+      const realBooks = await bookService.getBooks(1, 4);
+      return { data: realBooks.data.data };
+    } catch (error) {
+      console.warn('Failed to fetch real recommendations:', error);
+      return { data: [] };
+    }
+  },
+
+  getSimilarBooks: async (_bookId: string) => {
+    // FIX: Just fetch random real books
+    try {
+      const realBooks = await bookService.getBooks(1, 4);
+      return { data: realBooks.data.data };
+    } catch (error) {
+      return { data: [] };
     }
   },
 
   getBookRecommendations: async (bookId: string) => {
-    // Alias for consistency
     return recommendationService.getSimilarBooks(bookId);
   },
 };
 
-// Reviews & Ratings Service with dummy data fallback
-export const reviewService = {
-  getBookReviews: async (bookId: string) => {
-    if (USE_DUMMY_DATA) {
-      const dummyReviews = [
+// ===========================================
+// Search Service (Convenience Wrapper)
+// ===========================================
+
+export const searchService = {
+  search: async (query: string, filters?: SearchFilters) => {
+    return bookService.searchBooks(query, filters);
+  },
+
+  getBooksByCategory: async (category: string) => {
+    return bookService.getBooksByCategory(category);
+  },
+};
+
+// ===========================================
+// User Profile Service (REST - Hisham's user-profile-service)
+// ===========================================
+// Endpoint: /api/proxy/profiles (proxied to user-profile-service)
+//
+// Backend Schema (PostgreSQL):
+// - id: BIGSERIAL PK
+// - first_name: VARCHAR(255)
+// - last_name: VARCHAR(255)
+// - email: VARCHAR(255) UNIQUE
+// - phone: VARCHAR(255)
+// - address: VARCHAR(255)
+// - city: VARCHAR(255)
+// - country: VARCHAR(255)
+// ===========================================
+
+export const userService = {
+  /**
+   * Get user profile by ID
+   * Endpoint: GET /api/proxy/profiles/{userId}
+   */
+  getProfile: async (userId: string): Promise<{ data: User }> => {
+    // Dummy data for development/fallback
+    const dummyUser: User = {
+      _id: userId,
+      email: 'user@example.com',
+      name: 'John Doe',
+      firstName: 'John',
+      lastName: 'Doe',
+      avatar: undefined,
+      phone: '555-123-4567',
+      addresses: [
         {
           _id: '1',
-          bookId,
-          userId: 'user1',
-          userName: 'John Smith',
-          rating: 5,
-          text: 'Absolutely loved this book! Could not put it down.',
-          verifiedPurchase: true,
-          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          helpful: 12,
+          street: '123 Main St',
+          city: 'Huntington Beach',
+          state: 'CA',
+          postalCode: '92648',
+          country: 'United States',
+          isDefault: true,
         },
-        {
-          _id: '2',
-          bookId,
-          userId: 'user2',
-          userName: 'Sarah Johnson',
-          rating: 4,
-          text: 'Great read with compelling characters. Highly recommend!',
-          verifiedPurchase: true,
-          createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-          helpful: 8,
-        },
-        {
-          _id: '3',
-          bookId,
-          userId: 'user3',
-          userName: 'Michael Chen',
-          rating: 5,
-          text: 'One of the best books I have read this year. The writing is superb!',
-          verifiedPurchase: false,
-          createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-          helpful: 5,
-        },
-      ];
-      return { data: dummyReviews };
+      ],
+      wishlist: ['1', '2', '3'],
+      preferences: {
+        favoriteCategories: ['Fiction', 'Science Fiction'],
+        notifications: true,
+        newsletter: true,
+      },
+      createdAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for getProfile');
+      return { data: dummyUser };
     }
+
     try {
-      return await apiClient.get(`/reviews/book/${bookId}`);
+      const backendProfile = await restFetch<BackendUserProfileResponse>(
+        `/proxy/profiles/${userId}`
+      );
+
+      const user = transformBackendUserProfile(backendProfile);
+      logDebug(`Fetched profile for user ${userId}`, user);
+      return { data: user };
     } catch (error) {
-      console.warn('Reviews API failed, falling back to dummy data:', error);
+      console.warn('[API] getProfile failed, falling back to dummy data:', error);
+      return { data: dummyUser };
+    }
+  },
+
+  /**
+   * Get all user profiles
+   * Endpoint: GET /api/proxy/profiles
+   */
+  getAllProfiles: async (): Promise<{ data: User[] }> => {
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for getAllProfiles');
+      return { data: [] };
+    }
+
+    try {
+      const backendProfiles = await restFetch<BackendUserProfileResponse[]>(
+        '/proxy/profiles'
+      );
+
+      const users = backendProfiles.map(transformBackendUserProfile);
+      logDebug(`Fetched ${users.length} profiles`);
+      return { data: users };
+    } catch (error) {
+      console.warn('[API] getAllProfiles failed:', error);
       return { data: [] };
     }
   },
 
-  getBookRatings: async (bookId: string) => {
+  /**
+   * Create a new user profile
+   * Endpoint: POST /api/proxy/profiles
+   */
+  createProfile: async (profileData: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    country?: string;
+  }): Promise<{ data: { success: boolean; userId?: string } }> => {
     if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          bookId,
-          averageRating: 4.5,
-          totalRatings: 127,
-          distribution: { 5: 80, 4: 30, 3: 12, 2: 3, 1: 2 },
-        },
-      };
+      logDebug('Using dummy data for createProfile');
+      return { data: { success: true, userId: `user-${Date.now()}` } };
     }
-    try {
-      return await apiClient.get(`/ratings/book/${bookId}`);
-    } catch (error) {
-      console.warn('Ratings API failed, falling back to dummy data:', error);
-      return {
-        data: {
-          bookId,
-          averageRating: 0,
-          totalRatings: 0,
-          distribution: {},
-        },
-      };
-    }
-  },
 
-  createReview: async (bookId: string, userId: string, rating: number, text: string) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true, reviewId: 'dummy-review-123' } };
-    }
     try {
-      return await apiClient.post('/reviews', { bookId, userId, rating, text });
+      // Transform to backend expected format (snake_case)
+      const payload = {
+        first_name: profileData.firstName,
+        last_name: profileData.lastName,
+        email: profileData.email,
+        phone: profileData.phone || null,
+        address: profileData.address || null,
+        city: profileData.city || null,
+        country: profileData.country || null,
+      };
+
+      logDebug('Creating profile with payload:', payload);
+
+      const response = await restFetch<BackendUserProfileResponse>(
+        '/proxy/profiles',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }
+      );
+
+      return {
+        data: {
+          success: true,
+          userId: response.id.toString(),
+        },
+      };
     } catch (error) {
-      console.warn('Create review API failed:', error);
+      console.error('[API] createProfile failed:', error);
       return { data: { success: false } };
     }
   },
+
+  /**
+   * Update user profile
+   * Endpoint: PUT /api/proxy/profiles/{userId} (if supported)
+   * 
+   * Note: Hisham's controller only has POST (create) and DELETE
+   * You may need to add a PUT endpoint to the backend
+   */
+  updateProfile: async (
+    userId: string,
+    data: Record<string, unknown>
+  ): Promise<{ data: { success: boolean } }> => {
+    if (USE_DUMMY_DATA) {
+      return { data: { success: true } };
+    }
+
+    try {
+      // Transform frontend format to backend format
+      const payload: Record<string, unknown> = {};
+      
+      if (data.firstName) payload.first_name = data.firstName;
+      if (data.lastName) payload.last_name = data.lastName;
+      if (data.email) payload.email = data.email;
+      if (data.phone) payload.phone = data.phone;
+      if (data.address) payload.address = data.address;
+      if (data.city) payload.city = data.city;
+      if (data.country) payload.country = data.country;
+
+      console.log(`[API] Updating profile ${userId} via POST:`, payload);
+
+      // Using POST instead of PUT
+      await restFetch<BackendUserProfileResponse>(
+        '/proxy/profiles', 
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }
+      );
+
+      return { data: { success: true } };
+    } catch (error) {
+      console.warn('[API] updateProfile failed:', error);
+      return { data: { success: false } };
+    }
+  },
+
+  /**
+   * Delete user profile
+   * Endpoint: DELETE /api/proxy/profiles/{userId}
+   */
+  deleteProfile: async (userId: string): Promise<{ data: { success: boolean } }> => {
+    if (USE_DUMMY_DATA) {
+      logDebug('Using dummy data for deleteProfile');
+      return { data: { success: true } };
+    }
+
+    try {
+      await restFetch<void>(`/proxy/profiles/${userId}`, {
+        method: 'DELETE',
+      });
+      return { data: { success: true } };
+    } catch (error) {
+      console.error('[API] deleteProfile failed:', error);
+      return { data: { success: false } };
+    }
+  },
+
+  /**
+   * Get user's wishlist (Local storage / dummy implementation)
+   * Note: Not implemented in Hisham's backend
+   */
+  getWishlist: async (_userId: string) => {
+    const books = getDummyBooks(1, 4).data;
+    return { data: books.map(b => b._id) };
+  },
+
+  /**
+   * Add book to wishlist (Local storage / dummy implementation)
+   * Note: Not implemented in Hisham's backend
+   */
+  addToWishlist: async (_userId: string, _bookId: string) => {
+    return { data: { success: true } };
+  },
+
+  /**
+   * Remove book from wishlist (Local storage / dummy implementation)
+   * Note: Not implemented in Hisham's backend
+   */
+  removeFromWishlist: async (_userId: string, _bookId: string) => {
+    return { data: { success: true } };
+  },
 };
 
-// Pricing & Promotions Service with dummy data fallback
+// ===========================================
+// Pricing Service (Dummy)
+// ===========================================
+
 export const pricingService = {
-  getQuote: async (bookId: string, userId: string, qty: number, coupon?: string) => {
-    if (USE_DUMMY_DATA) {
-      const book = getDummyBookById(bookId);
-      return {
-        data: {
-          price: book.price * qty,
-          discount: coupon ? 5.00 : 0,
-          total: book.price * qty - (coupon ? 5.00 : 0),
-        },
-      };
-    }
-    try {
-      return await apiClient.post('/pricing/quote', { bookId, userId, qty, coupon });
-    } catch (error) {
-      console.warn('Pricing API failed, falling back to dummy data:', error);
-      return {
-        data: { price: 0, discount: 0, total: 0 },
-      };
-    }
+  getQuote: async (bookId: string, _userId: string, qty: number, coupon?: string) => {
+    const book = getDummyBookById(bookId);
+    const price = book ? book.price * qty : 0;
+    const discount = coupon ? 5.0 : 0;
+    return {
+      data: {
+        price,
+        discount,
+        total: price - discount,
+      },
+    };
   },
 
-  validateCoupon: async (code: string, userId: string) => {
-    if (USE_DUMMY_DATA) {
-      // Simple dummy coupon validation
-      const validCoupons = ['SAVE10', 'WELCOME', 'BOOKWORM'];
-      const isValid = validCoupons.includes(code.toUpperCase());
-      return {
-        data: {
-          valid: isValid,
-          discountAmount: isValid ? 10.00 : 0,
-          discountPercent: isValid ? 10 : 0,
-        },
-      };
-    }
-    try {
-      return await apiClient.post('/coupons/validate', { code, userId });
-    } catch (error) {
-      console.warn('Coupon validation API failed:', error);
-      return {
-        data: { valid: false, discountAmount: 0, discountPercent: 0 },
-      };
-    }
+  validateCoupon: async (code: string, _userId: string) => {
+    const validCoupons = ['SAVE10', 'WELCOME', 'BOOKWORM'];
+    const isValid = validCoupons.includes(code.toUpperCase());
+    return {
+      data: {
+        valid: isValid,
+        discountAmount: isValid ? 10.0 : 0,
+        discountPercent: isValid ? 10 : 0,
+      },
+    };
   },
 };
 
-// Payment Service
-export const paymentService = {
-  createPaymentIntent: (orderId: string, amount: number, currency: string) =>
-    apiClient.post('/payments/intent', { orderId, amount, currency }),
-  confirmPayment: (intentId: string, method: string) =>
-    apiClient.post('/payments/confirm', { intentId, method }),
-  getPaymentStatus: (paymentId: string) =>
-    apiClient.get(`/payments/${paymentId}`),
-};
+// ===========================================
+// Shipping Service (Dummy)
+// ===========================================
 
-// Shipping Service with dummy data fallback
 export const shippingService = {
-  getShippingQuote: async (orderId: string, address: any) => {
-    if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          standardShipping: 5.99,
-          expressShipping: 15.99,
-          estimatedDays: {
-            standard: '5-7 business days',
-            express: '2-3 business days',
+  trackShipment: async (trackingNumber: string) => {
+    return {
+      data: {
+        trackingNumber,
+        status: 'in_transit',
+        estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        events: [
+          {
+            status: 'Package received by carrier',
+            location: 'San Francisco, CA',
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
           },
-        },
-      };
-    }
-    try {
-      return await apiClient.post('/shipping/quote', { orderId, address });
-    } catch (error) {
-      console.warn('Shipping quote API failed, falling back to dummy data:', error);
-      return {
-        data: {
-          standardShipping: 5.99,
-          expressShipping: 15.99,
-          estimatedDays: {
-            standard: '5-7 business days',
-            express: '2-3 business days',
+          {
+            status: 'Out for delivery',
+            location: 'Huntington Beach, CA',
+            timestamp: new Date().toISOString(),
           },
-        },
-      };
-    }
-  },
-
-  createShipment: async (orderId: string, address: any) => {
-    if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          trackingNumber: `TRK${Date.now()}`,
-          carrier: 'USPS',
-          estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      };
-    }
-    try {
-      return await apiClient.post('/shipping/ship', { orderId, address });
-    } catch (error) {
-      console.warn('Create shipment API failed:', error);
-      return { data: null };
-    }
-  },
-
-  getTracking: async (trackingNumber: string) => {
-    if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          trackingNumber,
-          status: 'In Transit',
-          carrier: 'USPS',
-          estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          events: [
-            {
-              status: 'Package received by carrier',
-              location: 'San Francisco, CA',
-              timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              status: 'In transit',
-              location: 'Los Angeles, CA',
-              timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              status: 'Out for delivery',
-              location: 'Huntington Beach, CA',
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        },
-      };
-    }
-    try {
-      return await apiClient.get(`/shipping/track/${trackingNumber}`);
-    } catch (error) {
-      console.warn('Tracking API failed, falling back to dummy data:', error);
-      return { data: null };
-    }
+        ],
+      },
+    };
   },
 };
 
-// Order Service with dummy data fallback
-export const orderService = {
-  createOrder: async (userId: string, items: Array<{ bookId: string; qty: number }>, address: string) => {
-    if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          orderId: `ORD${Date.now()}`,
-          status: 'pending',
-          estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      };
-    }
-    try {
-      return await apiClient.post('/orders', { userId, items, address });
-    } catch (error) {
-      console.warn('Create order API failed:', error);
-      return { data: { orderId: null } };
-    }
-  },
-
-  getOrder: async (orderId: string) => {
-    if (USE_DUMMY_DATA) {
-      const dummyBooks = getDummyBooks(1, 3).data;
-      return {
-        data: {
-          _id: orderId,
-          userId: 'user-123',
-          items: dummyBooks.map((book, idx) => ({
-            bookId: book._id,
-            title: book.title,
-            quantity: idx + 1,
-            price: book.price,
-          })),
-          totalAmount: dummyBooks.reduce((sum, book, idx) => sum + book.price * (idx + 1), 0),
-          status: 'shipped' as const,
-          paymentStatus: 'completed' as const,
-          shippingAddress: {
-            _id: '1',
-            street: '123 Main St',
-            city: 'Huntington Beach',
-            state: 'CA',
-            postalCode: '92648',
-            country: 'United States',
-            isDefault: true,
-          },
-          trackingNumber: `TRK${Date.now()}`,
-          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      };
-    }
-    try {
-      return await apiClient.get(`/orders/${orderId}`);
-    } catch (error) {
-      console.warn('Get order API failed:', error);
-      return { data: null };
-    }
-  },
-
-  getUserOrders: async (userId: string) => {
-    if (USE_DUMMY_DATA) {
-      const dummyBooks = getDummyBooks(1, 5).data;
-      const orders = [
-        {
-          _id: 'ORD001',
-          userId,
-          items: dummyBooks.slice(0, 2).map((book) => ({
-            bookId: book._id,
-            title: book.title,
-            quantity: 1,
-            price: book.price,
-          })),
-          totalAmount: dummyBooks.slice(0, 2).reduce((sum, book) => sum + book.price, 0) * 1.13,
-          status: 'delivered' as const,
-          paymentStatus: 'completed' as const,
-          shippingAddress: {
-            _id: '1',
-            street: '123 Main St',
-            city: 'Huntington Beach',
-            state: 'CA',
-            postalCode: '92648',
-            country: 'United States',
-            isDefault: true,
-          },
-          trackingNumber: 'TRK123456789',
-          createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          _id: 'ORD002',
-          userId,
-          items: dummyBooks.slice(2, 4).map((book) => ({
-            bookId: book._id,
-            title: book.title,
-            quantity: 2,
-            price: book.price,
-          })),
-          totalAmount: dummyBooks.slice(2, 4).reduce((sum, book) => sum + book.price * 2, 0) * 1.13,
-          status: 'shipped' as const,
-          paymentStatus: 'completed' as const,
-          shippingAddress: {
-            _id: '1',
-            street: '123 Main St',
-            city: 'Huntington Beach',
-            state: 'CA',
-            postalCode: '92648',
-            country: 'United States',
-            isDefault: true,
-          },
-          trackingNumber: 'TRK987654321',
-          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          _id: 'ORD003',
-          userId,
-          items: [dummyBooks[4]].map((book) => ({
-            bookId: book._id,
-            title: book.title,
-            quantity: 1,
-            price: book.price,
-          })),
-          totalAmount: dummyBooks[4].price * 1.13,
-          status: 'pending' as const,
-          paymentStatus: 'completed' as const,
-          shippingAddress: {
-            _id: '1',
-            street: '123 Main St',
-            city: 'Huntington Beach',
-            state: 'CA',
-            postalCode: '92648',
-            country: 'United States',
-            isDefault: true,
-          },
-          trackingNumber: undefined,
-          createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ];
-      return { data: orders };
-    }
-    try {
-      return await apiClient.get(`/orders/user/${userId}`);
-    } catch (error) {
-      console.warn('Get user orders API failed, falling back to dummy data:', error);
-      return { data: [] };
-    }
-  },
-};
-
-// User Profile Service with dummy data fallback
-export const userService = {
-  getProfile: async (userId: string) => {
-    if (USE_DUMMY_DATA) {
-      return {
-        data: {
-          _id: userId,
-          email: 'user@example.com',
-          name: 'John Doe',
-          avatar: undefined,
-          addresses: [
-            {
-              _id: '1',
-              street: '123 Main St',
-              city: 'Huntington Beach',
-              state: 'CA',
-              postalCode: '92648',
-              country: 'United States',
-              isDefault: true,
-            },
-            {
-              _id: '2',
-              street: '456 Oak Avenue',
-              city: 'Los Angeles',
-              state: 'CA',
-              postalCode: '90001',
-              country: 'United States',
-              isDefault: false,
-            },
-          ],
-          wishlist: ['1', '2', '3'],
-          preferences: {
-            favoriteCategories: ['Fiction', 'Science Fiction', 'Mystery'],
-            notifications: true,
-            newsletter: true,
-          },
-          createdAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      };
-    }
-    try {
-      return await apiClient.get(`/users/${userId}/profile`);
-    } catch (error) {
-      console.warn('Get profile API failed, falling back to dummy data:', error);
-      return {
-        data: {
-          _id: userId,
-          email: 'user@example.com',
-          name: 'Guest User',
-          addresses: [],
-          wishlist: [],
-          preferences: {
-            favoriteCategories: [],
-            notifications: true,
-            newsletter: true,
-          },
-          createdAt: new Date().toISOString(),
-        },
-      };
-    }
-  },
-
-  updateProfile: async (userId: string, data: Record<string, any>) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
-    }
-    try {
-      return await apiClient.put(`/users/${userId}/profile`, data);
-    } catch (error) {
-      console.warn('Update profile API failed:', error);
-      return { data: { success: false } };
-    }
-  },
-
-  getWishlist: async (userId: string) => {
-    if (USE_DUMMY_DATA) {
-      const dummyBooks = getDummyBooks(1, 4).data;
-      return { data: dummyBooks.map(book => book._id) };
-    }
-    try {
-      return await apiClient.get(`/users/${userId}/wishlist`);
-    } catch (error) {
-      console.warn('Get wishlist API failed, falling back to dummy data:', error);
-      return { data: [] };
-    }
-  },
-
-  addToWishlist: async (userId: string, bookId: string) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
-    }
-    try {
-      return await apiClient.post(`/users/${userId}/wishlist`, { bookId });
-    } catch (error) {
-      console.warn('Add to wishlist API failed:', error);
-      return { data: { success: false } };
-    }
-  },
-
-  removeFromWishlist: async (userId: string, bookId: string) => {
-    if (USE_DUMMY_DATA) {
-      return { data: { success: true } };
-    }
-    try {
-      return await apiClient.delete(`/users/${userId}/wishlist/${bookId}`);
-    } catch (error) {
-      console.warn('Remove from wishlist API failed:', error);
-      return { data: { success: false } };
-    }
-  },
-};
-
+// ===========================================
 // Auth Service
+// ===========================================
+
 export const authService = {
-  login: (email: string, password: string) =>
-    apiClient.post('/auth/login', { email, password }),
-  register: (email: string, password: string, name: string) =>
-    apiClient.post('/auth/register', { email, password, name }),
+  login: async (_email: string, _password: string) => {
+    // This should be handled by AWS Cognito/Amplify
+    throw new Error('Use AWS Amplify for authentication');
+  },
+
+  register: async (_email: string, _password: string, _name: string) => {
+    // This should be handled by AWS Cognito/Amplify
+    throw new Error('Use AWS Amplify for authentication');
+  },
+
   logout: () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('authToken');
@@ -815,4 +1183,17 @@ export const authService = {
   },
 };
 
-export default apiClient;
+// Default export for backward compatibility
+export default {
+  bookService,
+  authorService,
+  orderService,
+  cartService,
+  reviewService,
+  recommendationService,
+  searchService,
+  userService,
+  pricingService,
+  shippingService,
+  authService,
+};

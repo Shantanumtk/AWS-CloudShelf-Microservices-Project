@@ -42,12 +42,13 @@ export const BookCard: React.FC<BookCardProps> = ({
     <Card className="flex flex-col overflow-hidden hover:shadow-lg transition-shadow duration-200">
       {/* Cover Image */}
       <div className="relative overflow-hidden bg-muted h-64 w-full">
-        <Link href={`/book/${book._id}`}>
+        <Link href={`/books/${book._id}`}>
           <Image
             src={book.coverImage || 'https://via.placeholder.com/200x300'}
             alt={book.title}
             fill
             className="object-cover hover:scale-105 transition-transform duration-300 cursor-pointer"
+            unoptimized={true}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
         </Link>
@@ -73,7 +74,7 @@ export const BookCard: React.FC<BookCardProps> = ({
 
       {/* Book Info */}
       <CardContent className="flex-1 pt-4">
-        <Link href={`/book/${book._id}`} className="hover:text-primary transition-colors">
+        <Link href={`/books/${book._id}`} className="hover:text-primary transition-colors">
           <h3 className="font-semibold text-lg line-clamp-2 mb-1">
             {book.title}
           </h3>
