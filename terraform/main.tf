@@ -129,6 +129,8 @@ resource "aws_instance" "cloudshelf_instance" {
       "cloud-init status --wait",
 
       # 2. Docker Permissions
+      "sudo apt-get update",
+      "sudo apt-get install -y maven",
       "sudo usermod -aG docker ubuntu",
 
       # 3. Start Minikube
