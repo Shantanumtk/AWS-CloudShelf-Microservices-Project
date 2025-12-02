@@ -122,4 +122,33 @@ resource "aws_instance" "cloudshelf_instance" {
   tags = {
     Name = "cloudshelf-instance"
   }
+  provisioner "remote-exec" {
+    inline = [
+      # 1. Wait for Cloud-Init to finish installing Docker/Minikube
+      "echo 'Waiting for cloud-init to finish...'",
+      "cloud-init status --wait",
+
+      # 2. Docker Permissions
+      "sudo usermod -aG docker ubuntu",
+
+      # 3. Start Minikube
+      "minikube start --driver=docker --memory=4096 --cpus=2 --force",
+      
+      # 4. Setup Code
+      "rm -rf AWS-CloudShelf-Microservices-Project", # Clean up old runs
+      "git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-Project.git",
+      "cd AWS-CloudShelf-Microservices-Project/spring-microservices-bookstore-demo",
+      "chmod +x deploy.sh",
+
+      # 5. Run Deploy 
+      "sg docker -c './deploy.sh'"
+    ]
+
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("${path.module}/../.ssh/cloudshelf-key")
+      host        = self.public_ip
+    }
+  }
 }
