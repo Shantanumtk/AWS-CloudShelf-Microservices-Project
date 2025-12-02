@@ -130,8 +130,11 @@ resource "aws_instance" "cloudshelf_instance" {
 
       # 2. Docker Permissions
       "sudo apt-get update",
-      "sudo apt-get install -y maven",
+      "sudo apt-get install -y -y openjdk-17-jdk maven",
       "sudo usermod -aG docker ubuntu",
+
+      "java -version",
+      "mvn -version",
 
       # 3. Start Minikube
       "minikube start --driver=docker --memory=4096 --cpus=2 --force",
