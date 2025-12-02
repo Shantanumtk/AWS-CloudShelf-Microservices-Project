@@ -46,6 +46,7 @@ import {
 } from './dummyData';
 
 import { stringToNumberId } from './utils';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 // ===========================================
 // Configuration
@@ -91,8 +92,19 @@ interface GraphQLRequestOptions {
   variables?: Record<string, unknown>;
 }
 
+// Helper to get the current JWT token securely from AWS
+async function getAuthToken(): Promise<string | undefined> {
+  try {
+    const session = await fetchAuthSession();
+    return session.tokens?.idToken?.toString();
+  } catch (err) {
+    return undefined;
+  }
+}
+
 async function graphqlFetch<T>(options: GraphQLRequestOptions): Promise<GraphQLResponse<T>> {
   const { query, variables } = options;
+  const token = await getAuthToken();
   
   logDebug(`GraphQL Request to ${GRAPHQL_ENDPOINT}`, { query, variables });
   
@@ -101,10 +113,8 @@ async function graphqlFetch<T>(options: GraphQLRequestOptions): Promise<GraphQLR
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Add auth header if available
-        ...(typeof window !== 'undefined' && localStorage.getItem('authToken')
-          ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
-          : {}),
+        // Attaching token
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -137,16 +147,14 @@ async function restFetch<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-  
+  const token = await getAuthToken();
   logDebug(`REST Request to ${url}`, options);
   
   const config: RequestInit = {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(typeof window !== 'undefined' && localStorage.getItem('authToken')
-        ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
-        : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   };
@@ -225,7 +233,7 @@ export const bookService = {
    * Get a single book by ID
    */
   getBook: async (bookId: string): Promise<{ data: Book | undefined }> => {
-    // Force log to verify we are running this code
+    // Force log to verify
     console.log(`\n[!!! DIAGNOSTIC] Fetching Book ID: ${bookId}`);
     console.log(`[!!! DIAGNOSTIC] Environment: ${typeof window === 'undefined' ? 'SERVER (Node)' : 'CLIENT (Browser)'}`);
     console.log(`[!!! DIAGNOSTIC] Target URL: ${GRAPHQL_ENDPOINT}`);
@@ -262,8 +270,7 @@ export const bookService = {
       
       return { data: getDummyBookById(bookId) };
     } catch (error) {
-      // This is the important part!
-      console.error('[!!! DIAGNOSTIC] 💥 CRITICAL FAILURE:', error);
+      console.error('[!!! DIAGNOSTIC] UNKNOWN error:', error);
       return { data: getDummyBookById(bookId) };
     }
   },

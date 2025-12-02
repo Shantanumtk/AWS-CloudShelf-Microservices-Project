@@ -1,23 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext'; 
 import { Loader, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { signIn } from 'aws-amplify/auth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth(); // Use AuthContext
+  
+  // Use isAuthenticated to redirect if already logged in
+  const { isAuthenticated } = useAuth(); 
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,28 +42,33 @@ export default function LoginPage() {
       setLoading(true);
       setError(null);
 
-      // Simulate API call (replace with real API later)
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Call login from AuthContext
-      login('demo-token-12345', 'Demo User', email);
+      // --- AWS LOGIN ---
+      const { isSignedIn, nextStep } = await signIn({
+        username: email,
+        password,
+      });
 
-      // Redirect to home page
-      router.push('/');
+      if (isSignedIn) {
+        // Success!
+        router.push('/');
+      } else {
+        // Handle edge cases
+        if (nextStep.signInStep === 'CONFIRM_SIGN_UP') {
+           setError('Please check your email to confirm your account.');
+        } else if (nextStep.signInStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
+           setError('You must change your password. (Not implemented in this demo)');
+        } else {
+           setError('Login incomplete. Check console for details.');
+           console.log('Next Step:', nextStep);
+        }
+      }
+
     } catch (err: any) {
-      setError('Invalid email or password');
       console.error('Login failed:', err);
+      setError(err.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDemoLogin = () => {
-    // Call login from AuthContext
-    login('demo-token-12345', 'Demo User', 'demo@bookverse.com');
-    
-    // Redirect to home page
-    router.push('/');
   };
 
   return (
@@ -132,20 +148,6 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {/* Remember Me & Forgot Password */}
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4" />
-                    <span className="text-sm">Remember me</span>
-                  </label>
-                  <Link
-                    href="/forgot-password"
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-
                 {/* Submit Button */}
                 <Button
                   type="submit"
@@ -176,16 +178,6 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Demo Login */}
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full mb-4"
-                onClick={handleDemoLogin}
-              >
-                Demo Login
-              </Button>
-
               {/* Sign Up Link */}
               <div className="text-center mt-6">
                 <p className="text-sm text-muted-foreground">
@@ -198,20 +190,6 @@ export default function LoginPage() {
                   </Link>
                 </p>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Additional Info */}
-          <Card className="mt-6 bg-muted/30">
-            <CardContent className="p-6">
-              <h3 className="font-semibold mb-2">Why Sign In?</h3>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Save books to your wishlist</li>
-                <li>• Track your orders and shipments</li>
-                <li>• Get personalized recommendations</li>
-                <li>• Faster checkout with saved addresses</li>
-                <li>• View your reading history</li>
-              </ul>
             </CardContent>
           </Card>
         </div>

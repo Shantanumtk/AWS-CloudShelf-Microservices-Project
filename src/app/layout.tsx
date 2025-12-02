@@ -1,23 +1,23 @@
-import type { Metadata } from 'next';
-import './globals.css';
-import { Providers } from '@/components/Providers';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Providers } from "@/components/Providers";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'BookVerse - Digital Book Store',
-  description: 'Your favorite digital bookstore with millions of titles',
-  icons: {
-    icon: '/favicon.ico',
-  },
+  title: "BookVerse",
+  description: "Your digital bookstore journey",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="en">
-      <body className="bg-background text-foreground">
+      <body className={inter.className}>
         <Providers>
           {children}
         </Providers>
